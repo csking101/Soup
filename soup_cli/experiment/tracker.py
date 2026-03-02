@@ -191,7 +191,7 @@ class ExperimentTracker:
         """Return list of runs ordered by created_at desc."""
         conn = self._get_conn()
         rows = conn.execute(
-            "SELECT * FROM runs ORDER BY created_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM runs ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(row) for row in rows]
 

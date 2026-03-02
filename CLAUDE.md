@@ -62,6 +62,7 @@ soup train --config soup.yaml
 - **Output:** Use `rich.console.Console` — never bare `print()`
 - **Lazy imports:** Heavy deps (torch, transformers, peft, datasketch, lm_eval, plotext) are imported inside functions, not at module level
 - **Variable naming:** Avoid single-letter names (ruff E741) — use `entry`, `part`, `length` instead of `l`
+- **Testing:** Rich Panel objects must be rendered via `Console(file=StringIO())` for string assertions, not `str(panel)`
 
 ## Git Workflow
 
@@ -70,3 +71,27 @@ soup train --config soup.yaml
 - CI: GitHub Actions runs ruff lint + pytest on Python 3.9/3.11/3.12
 - Always run `ruff check soup_cli/ tests/` before committing
 - Always run `pytest tests/ -v` before committing
+
+## Tests
+
+Test suite (~147 tests) lives in `tests/`:
+
+| File | Covers |
+|---|---|
+| `test_config.py` | Config loading, validation, defaults |
+| `test_data.py` | Format detection, conversion, validation |
+| `test_gpu.py` | GPU detection, batch size estimation |
+| `test_cli.py` | CLI commands basic validation |
+| `test_tracker.py` | SQLite experiment tracker |
+| `test_runs.py` | `soup runs` CLI commands |
+| `test_data_tools.py` | Data convert/merge/dedup/stats commands |
+| `test_eval.py` | Eval command |
+| `test_smoke_train.py` | Full pipeline smoke tests (GPU) |
+| `test_chat.py` | Chat command, `_detect_base_model` |
+| `test_push.py` | Push command, `_format_size`, `_generate_model_card` |
+| `test_init.py` | Init command, templates, overwrite logic |
+| `test_callback.py` | `SoupTrainerCallback` (mock-based) |
+| `test_display.py` | `TrainingDisplay` rendering |
+| `test_loader.py` | Data loading (JSONL/JSON/CSV, edge cases) |
+| `test_validator.py` | `validate_and_stats`, `extended_stats`, `_percentile` |
+| `test_formats.py` | Reverse conversion, round-trips, edge cases |
