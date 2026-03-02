@@ -18,6 +18,7 @@
 </p>
 
 <p align="center">
+  <a href="https://pypi.org/project/soup-cli/"><img src="https://img.shields.io/pypi/v/soup-cli?color=blue" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
   <img src="https://img.shields.io/badge/tests-147%20passed-brightgreen" alt="Tests">
@@ -29,7 +30,7 @@
 Soup turns the pain of LLM fine-tuning into a simple workflow. One config, one command, done.
 
 ```bash
-pip install git+https://github.com/MakazhanAlpamys/Soup.git
+pip install soup-cli
 soup init --template chat
 soup train
 ```
@@ -48,11 +49,11 @@ Training LLMs is still painful. Even experienced teams spend 30-50% of their tim
 ### 1. Install
 
 ```bash
-# From GitHub (recommended for now):
-pip install git+https://github.com/MakazhanAlpamys/Soup.git
+# From PyPI (recommended):
+pip install soup-cli
 
-# From PyPI (coming soon):
-# pip install soup-cli
+# Or from GitHub (latest dev):
+pip install git+https://github.com/MakazhanAlpamys/Soup.git
 ```
 
 ### 2. Create config
