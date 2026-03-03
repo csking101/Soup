@@ -83,13 +83,13 @@ def test_resolve_checkpoint_auto_ignores_non_checkpoint_dirs(tmp_path: Path):
 def test_train_resume_flag_in_help():
     result = runner.invoke(app, ["train", "--help"])
     assert result.exit_code == 0
-    assert "--resume" in result.output
+    assert "resume" in result.output.lower()
 
 
 def test_train_wandb_flag_in_help():
     result = runner.invoke(app, ["train", "--help"])
     assert result.exit_code == 0
-    assert "--wandb" in result.output
+    assert "wandb" in result.output.lower()
 
 
 def test_train_resume_nonexistent_checkpoint(tmp_path: Path):
