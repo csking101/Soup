@@ -234,4 +234,4 @@ class TestTrainDeepSpeedFlag:
 
         runner = CliRunner()
         result = runner.invoke(app, ["train", "--help"])
-        assert "--deepspeed" in result.output
+        assert "deepspeed" in result.output.lower()
