@@ -21,7 +21,7 @@
   <a href="https://pypi.org/project/soup-cli/"><img src="https://img.shields.io/pypi/v/soup-cli?color=blue" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
-  <img src="https://img.shields.io/badge/tests-281%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-321%20passed-brightgreen" alt="Tests">
   <a href="https://github.com/MakazhanAlpamys/Soup/actions"><img src="https://github.com/MakazhanAlpamys/Soup/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
@@ -324,6 +324,43 @@ soup train --config soup.yaml --deepspeed zero2_offload
 soup train --config soup.yaml --deepspeed ./my_ds_config.json
 ```
 
+## Quickstart Demo
+
+Run a complete demo in one command — creates sample data, config, and trains a tiny model:
+
+```bash
+# Full demo (creates data + config + trains TinyLlama)
+soup quickstart
+
+# Just create files without training
+soup quickstart --dry-run
+
+# Skip confirmation
+soup quickstart --yes
+```
+
+## Health Check
+
+Check your environment for compatibility issues:
+
+```bash
+soup doctor
+```
+
+Shows: Python version, GPU availability, all dependency versions, and fix suggestions.
+
+## Error Handling
+
+Soup shows friendly error messages by default (2-3 lines with a fix suggestion). For full tracebacks:
+
+```bash
+# Any command with --verbose
+soup train --config soup.yaml --verbose
+
+# Global flag works with all commands
+soup --verbose eval --model ./output --benchmarks mmlu
+```
+
 ## Data Formats
 
 Soup supports these formats (auto-detected):
@@ -429,6 +466,10 @@ soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 | Hyperparameter sweep (grid/random) | ✅ |
 | Model comparison (diff) | ✅ |
 | Multi-GPU / DeepSpeed | ✅ |
+| Friendly error messages | ✅ |
+| Health check (soup doctor) | ✅ |
+| Quickstart demo | ✅ |
+| Confirmation prompts | ✅ |
 | Web dashboard | 🔜 |
 | Cloud mode (BYOG) | 🔜 |
 
@@ -459,7 +500,10 @@ soup sweep --config soup.yaml --param lr=...  Hyperparameter search
 soup diff --model-a ./a --model-b ./b         Compare two models
 soup data generate --prompt "..." --count 100 Generate synthetic data
 soup train --deepspeed zero2                  Multi-GPU with DeepSpeed
+soup doctor                                   Check environment & dependencies
+soup quickstart [--dry-run]                   Full demo: create data + config + train
 soup version                                  Show version
+soup --verbose <command>                      Show full traceback on errors
 ```
 
 ## Requirements
@@ -478,7 +522,7 @@ pip install -e ".[dev]"
 # Lint
 ruff check soup_cli/ tests/
 
-# Run unit tests (fast, no GPU needed — 281 tests)
+# Run unit tests (fast, no GPU needed — 321 tests)
 pytest tests/ -v
 
 # Run smoke tests (downloads tiny model, runs real training)

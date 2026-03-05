@@ -71,6 +71,14 @@ soup train --config soup.yaml
 
 **DeepSpeed:** `utils/deepspeed.py` provides ZeRO Stage 2/3 config templates. `commands/train.py` supports `--deepspeed zero2|zero3|zero2_offload|<path>`. Trainers (SFT/DPO) pass `deepspeed` to HF TrainingArguments. Requires `pip install 'soup-cli[deepspeed]'`.
 
+**Error handling:** `utils/errors.py` maps known exceptions (CUDA OOM, missing deps, connection errors, validation errors) to friendly 2-3 line messages with fix suggestions. `cli.py` wraps all commands in a try/except and uses `--verbose` flag for full tracebacks.
+
+**Doctor:** `commands/doctor.py` checks system info, GPU availability, and all dependency versions. Reports missing/outdated packages with fix suggestions.
+
+**Quickstart:** `commands/quickstart.py` runs a complete demo — creates 20-example alpaca dataset, TinyLlama config, and trains a LoRA adapter. Supports `--dry-run` to create files only.
+
+**Confirmation prompts:** `commands/train.py` and `commands/sweep.py` ask for confirmation before starting. Skip with `--yes` / `-y`.
+
 ## Code Conventions
 
 - **Line length:** 100 chars (ruff enforced)
@@ -99,7 +107,7 @@ soup train --config soup.yaml
 
 ## Tests
 
-Test suite (~281 tests) lives in `tests/`:
+Test suite (~321 tests) lives in `tests/`:
 
 | File | Covers |
 |---|---|
@@ -128,3 +136,6 @@ Test suite (~281 tests) lives in `tests/`:
 | `test_sweep.py` | Sweep params parsing, combinations, nested config |
 | `test_diff.py` | Diff prompts collection, metrics, CLI |
 | `test_deepspeed.py` | DeepSpeed configs, multi-GPU detection, trainer integration |
+| `test_errors.py` | Friendly error messages, --verbose flag, error mapping |
+| `test_doctor.py` | `soup doctor` command, version checking, dependency table |
+| `test_quickstart.py` | `soup quickstart` demo, data/config creation, --dry-run |

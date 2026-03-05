@@ -1,0 +1,160 @@
+"""Friendly error handling — maps raw exceptions to actionable messages."""
+
+import traceback
+
+from rich.console import Console
+from rich.panel import Panel
+
+console = Console(stderr=True)
+
+# Map known error patterns to (short message, fix suggestion)
+ERROR_MAP = [
+    # CUDA OOM
+    (
+        "CUDA out of memory",
+        "GPU ran out of memory during training.",
+        "Try: reduce batch_size, use quantization: 4bit, or use a smaller model.",
+    ),
+    (
+        "OutOfMemoryError",
+        "GPU ran out of memory.",
+        "Try: reduce batch_size, use quantization: 4bit, or use a smaller model.",
+    ),
+    # Missing optional deps
+    (
+        "No module named 'fastapi'",
+        "FastAPI is not installed (needed for soup serve).",
+        "Run: pip install 'soup-cli\\[serve]'",
+    ),
+    (
+        "No module named 'uvicorn'",
+        "Uvicorn is not installed (needed for soup serve).",
+        "Run: pip install 'soup-cli\\[serve]'",
+    ),
+    (
+        "No module named 'datasketch'",
+        "Datasketch is not installed (needed for dedup).",
+        "Run: pip install 'soup-cli\\[data]'",
+    ),
+    (
+        "No module named 'lm_eval'",
+        "lm-evaluation-harness is not installed (needed for eval).",
+        "Run: pip install 'soup-cli\\[eval]'",
+    ),
+    (
+        "No module named 'wandb'",
+        "Weights & Biases is not installed.",
+        "Run: pip install wandb",
+    ),
+    (
+        "No module named 'deepspeed'",
+        "DeepSpeed is not installed.",
+        "Run: pip install 'soup-cli\\[deepspeed]'",
+    ),
+    (
+        "No module named 'httpx'",
+        "httpx is not installed (needed for data generate).",
+        "Run: pip install 'soup-cli\\[generate]'",
+    ),
+    # Peft / transformers incompatibility
+    (
+        "No module named 'peft'",
+        "PEFT is not installed.",
+        "Run: pip install peft>=0.7.0",
+    ),
+    (
+        "No module named 'trl'",
+        "TRL is not installed.",
+        "Run: pip install trl>=0.7.0",
+    ),
+    (
+        "No module named 'bitsandbytes'",
+        "BitsAndBytes is not installed (needed for quantization).",
+        "Run: pip install bitsandbytes>=0.41.0",
+    ),
+    # Connection errors
+    (
+        "ConnectionError",
+        "Network connection failed.",
+        "Check your internet connection. If downloading from HuggingFace, check HF_TOKEN.",
+    ),
+    (
+        "HTTPError",
+        "HTTP request failed.",
+        "Check your internet connection and API keys (OPENAI_API_KEY, HF_TOKEN).",
+    ),
+    (
+        "ConnectTimeout",
+        "Connection timed out.",
+        "Check your internet connection and try again.",
+    ),
+    # File not found
+    (
+        "No such file or directory",
+        None,  # Will use the original message
+        "Check the file path. Run 'soup init' to create a config.",
+    ),
+    # YAML errors
+    (
+        "yaml.scanner.ScannerError",
+        "Invalid YAML syntax in config file.",
+        "Check your soup.yaml for syntax errors (indentation, colons, quotes).",
+    ),
+    # Pydantic validation
+    (
+        "validation error",
+        "Config validation failed.",
+        "Check your soup.yaml values. Run 'soup init' to generate a valid config.",
+    ),
+    # Auth errors
+    (
+        "401",
+        "Authentication failed.",
+        "Check your API key or token (HF_TOKEN, OPENAI_API_KEY, WANDB_API_KEY).",
+    ),
+    (
+        "403",
+        "Access denied.",
+        "Check your permissions. Some models require accepting a license on HuggingFace.",
+    ),
+]
+
+
+def format_friendly_error(exc: Exception, verbose: bool = False) -> None:
+    """Display a friendly error message for the given exception.
+
+    In normal mode: 2-3 lines with error + fix suggestion.
+    In verbose mode: full traceback.
+    """
+    exc_str = str(exc)
+    exc_type = type(exc).__name__
+
+    # Search for known error patterns
+    for pattern, short_msg, fix in ERROR_MAP:
+        if pattern in exc_str or pattern in exc_type:
+            error_msg = short_msg or exc_str
+            console.print(f"\n[bold red]Error:[/] {error_msg}")
+            console.print(f"[green]Fix:[/] {fix}")
+            if verbose:
+                console.print()
+                console.print(
+                    Panel(
+                        traceback.format_exc(),
+                        title="[dim]Full Traceback[/]",
+                        border_style="dim",
+                    )
+                )
+            return
+
+    # Unknown error — show type + message
+    console.print(f"\n[bold red]Error:[/] {exc_type}: {exc_str}")
+    console.print("[dim]Run with --verbose for the full traceback.[/]")
+    if verbose:
+        console.print()
+        console.print(
+            Panel(
+                traceback.format_exc(),
+                title="[dim]Full Traceback[/]",
+                border_style="dim",
+            )
+        )

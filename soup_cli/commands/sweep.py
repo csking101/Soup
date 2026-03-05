@@ -50,6 +50,12 @@ def sweep(
         "--dry-run",
         help="Show planned runs without executing",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt",
+    ),
 ):
     """Run hyperparameter sweep: grid or random search over training parameters."""
     config_path = Path(config)
@@ -95,6 +101,11 @@ def sweep(
     if dry_run:
         console.print("[yellow]Dry run — no training will be executed.[/]")
         raise typer.Exit()
+
+    if not yes:
+        if not typer.confirm(f"Start {len(combinations)} training run(s)?", default=True):
+            console.print("[yellow]Cancelled.[/]")
+            raise typer.Exit()
 
     # Execute sweep
     base_cfg = load_config(config_path)

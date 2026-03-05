@@ -1,5 +1,7 @@
 """Main CLI entry point — all commands registered here."""
 
+import sys
+
 import typer
 from rich.console import Console
 
@@ -19,8 +21,13 @@ from soup_cli.commands import (
     sweep,
     train,
 )
+from soup_cli.commands import doctor as doctor_cmd
+from soup_cli.commands import quickstart as quickstart_cmd
 
 console = Console()
+
+# Global verbose flag — set via callback, read by error handler
+_verbose = False
 
 app = typer.Typer(
     name="soup",
@@ -45,6 +52,8 @@ app.command(name="eval")(eval.eval_model)
 app.command()(serve.serve)
 app.command()(sweep.sweep)
 app.command(name="diff")(diff.diff)
+app.command()(doctor_cmd.doctor)
+app.command()(quickstart_cmd.quickstart)
 
 # Register data generate as a subcommand of data
 data.app.command(name="generate")(generate.generate)
@@ -57,6 +66,39 @@ def version():
 
 
 @app.callback(invoke_without_command=True)
-def main(ctx: typer.Context):
+def main(
+    ctx: typer.Context,
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        "-V",
+        help="Show full traceback on errors",
+    ),
+):
     """Soup — fine-tune LLMs in one command."""
-    pass
+    global _verbose
+    _verbose = verbose
+
+
+def run():
+    """Entry point with friendly error handling."""
+    try:
+        app()
+    except SystemExit:
+        raise
+    except typer.Exit:
+        raise
+    except KeyboardInterrupt:
+        console.print("\n[yellow]Interrupted.[/]")
+        sys.exit(130)
+    except Exception as exc:
+        from soup_cli.utils.errors import format_friendly_error
+
+        format_friendly_error(exc, verbose=_verbose)
+        sys.exit(1)
+
+
+# When invoked via `soup` entry point, use run() for error handling.
+# When invoked via `python -m soup_cli`, __main__.py calls run() directly.
+if __name__ == "__main__":
+    run()

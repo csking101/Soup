@@ -49,6 +49,12 @@ def train(
         "--deepspeed",
         help="Enable DeepSpeed: zero2, zero3, zero2_offload, or path to config JSON",
     ),
+    yes: bool = typer.Option(
+        False,
+        "--yes",
+        "-y",
+        help="Skip confirmation prompt",
+    ),
 ):
     """Start training from a soup.yaml config."""
     config_path = Path(config)
@@ -105,6 +111,11 @@ def train(
             title="Training Setup",
         )
     )
+
+    if not dry_run and not yes:
+        if not typer.confirm("Start training?", default=True):
+            console.print("[yellow]Cancelled.[/]")
+            raise typer.Exit()
 
     if dry_run:
         console.print("[yellow]Dry run — validating data...[/]")
