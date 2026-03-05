@@ -21,7 +21,7 @@
   <a href="https://pypi.org/project/soup-cli/"><img src="https://img.shields.io/pypi/v/soup-cli?color=blue" alt="PyPI"></a>
   <img src="https://img.shields.io/badge/python-3.9%2B-blue" alt="Python 3.9+">
   <img src="https://img.shields.io/badge/license-MIT-green" alt="MIT License">
-  <img src="https://img.shields.io/badge/tests-321%20passed-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-passing-brightgreen" alt="Tests">
   <a href="https://github.com/MakazhanAlpamys/Soup/actions"><img src="https://github.com/MakazhanAlpamys/Soup/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
 </p>
 
@@ -361,9 +361,11 @@ soup --verbose train --config soup.yaml
 soup --verbose eval --model ./output --benchmarks mmlu
 ```
 
+> **Note:** `--verbose` is a global flag — it must go **before** the command name, not after.
+
 ## Data Formats
 
-Soup supports these formats (auto-detected):
+Soup supports these formats (auto-detected). Files can be JSONL, JSON, CSV, or Parquet.
 
 **Alpaca:**
 ```json
@@ -476,34 +478,30 @@ soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 ## All Commands
 
 ```
-soup init [--template chat|code|medical]      Create soup.yaml config
-soup train --config soup.yaml [--dry-run]     Start training
-soup train --resume auto                      Resume from last checkpoint
-soup train --wandb                            Train with W&B logging
-soup chat --model ./output                    Interactive chat with model
-soup push --model ./output --repo user/name   Upload to HuggingFace Hub
+soup init [--template chat|code|medical]      Create config
+soup train --config soup.yaml                 Start training
+soup chat --model ./output                    Interactive chat
+soup push --model ./output --repo user/name   Upload to HuggingFace
 soup merge --adapter ./output                 Merge LoRA with base model
 soup export --model ./output --format gguf    Export to GGUF (Ollama)
+soup eval --model ./output --benchmarks mmlu  Evaluate on benchmarks
+soup serve --model ./output --port 8000       OpenAI-compatible API server
+soup sweep --config soup.yaml --param lr=...  Hyperparameter search
+soup diff --model-a ./a --model-b ./b         Compare two models
 soup data inspect <path>                      View dataset stats
 soup data validate <path> --format alpaca     Check format
 soup data convert <path> --to chatml          Convert between formats
 soup data merge data1.jsonl data2.jsonl       Combine datasets
 soup data dedup <path> --threshold 0.8        Remove duplicates (MinHash)
 soup data stats <path>                        Extended statistics
-soup runs                                     List all training runs
-soup runs show <run_id>                       Detailed run info + loss graph
-soup runs compare <run_1> <run_2>             Compare two runs
-soup runs delete <run_id>                     Remove a run
-soup eval --model ./output --benchmarks mmlu  Evaluate on benchmarks
-soup serve --model ./output --port 8000       OpenAI-compatible API server
-soup sweep --config soup.yaml --param lr=...  Hyperparameter search
-soup diff --model-a ./a --model-b ./b         Compare two models
 soup data generate --prompt "..." --count 100 Generate synthetic data
-soup train --deepspeed zero2                  Multi-GPU with DeepSpeed
-soup doctor                                   Check environment & dependencies
-soup quickstart [--dry-run]                   Full demo: create data + config + train
+soup runs                                     List training runs
+soup runs show <run_id>                       Run details + loss graph
+soup runs compare <run_1> <run_2>             Compare two runs
+soup doctor                                   Check environment
+soup quickstart [--dry-run]                   Full demo
 soup version                                  Show version
-soup --verbose <command>                      Show full traceback on errors
+soup --verbose <command>                      Full traceback on errors
 ```
 
 ## Requirements
@@ -511,6 +509,16 @@ soup --verbose <command>                      Show full traceback on errors
 - Python 3.9+
 - GPU with CUDA (recommended) or Apple Silicon (MPS) or CPU (slow)
 - 8 GB+ VRAM for 7B models with QLoRA
+
+### Optional Extras
+
+| Extra | Install | What it adds |
+|---|---|---|
+| `serve` | `pip install 'soup-cli[serve]'` | Inference server (FastAPI + uvicorn) |
+| `data` | `pip install 'soup-cli[data]'` | Deduplication (MinHash via datasketch) |
+| `eval` | `pip install 'soup-cli[eval]'` | Benchmark evaluation (lm-evaluation-harness) |
+| `deepspeed` | `pip install 'soup-cli[deepspeed]'` | Multi-GPU training (DeepSpeed ZeRO) |
+| `dev` | `pip install 'soup-cli[dev]'` | Tests + linting (pytest, ruff) |
 
 ## Development
 
@@ -522,12 +530,16 @@ pip install -e ".[dev]"
 # Lint
 ruff check soup_cli/ tests/
 
-# Run unit tests (fast, no GPU needed — 321 tests)
+# Run unit tests (fast, no GPU needed)
 pytest tests/ -v
 
 # Run smoke tests (downloads tiny model, runs real training)
 pytest tests/ -m smoke -v
 ```
+
+## Changelog
+
+See [GitHub Releases](https://github.com/MakazhanAlpamys/Soup/releases) for version history.
 
 ## License
 
