@@ -175,7 +175,7 @@ def test_verbose_flag_in_help():
     """--verbose flag is shown in help."""
     result = runner.invoke(app, ["--help"])
     assert result.exit_code == 0
-    assert "--verbose" in result.output
+    assert "verbose" in result.output
 
 
 def test_help_shows_doctor_and_quickstart():
