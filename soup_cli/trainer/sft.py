@@ -33,13 +33,7 @@ class SFTTrainerWrapper:
     def setup(self, dataset: dict):
         """Load model, tokenizer, apply LoRA, create trainer."""
         from datasets import Dataset
-        from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
-        from transformers import (
-            AutoModelForCausalLM,
-            AutoTokenizer,
-            BitsAndBytesConfig,
-            TrainingArguments,
-        )
+        from transformers import TrainingArguments
         from trl import SFTTrainer
 
         # Enable Rich progress bar for HuggingFace downloads
@@ -47,52 +41,13 @@ class SFTTrainerWrapper:
 
         cfg = self.config
         tcfg = cfg.training
+        use_unsloth = cfg.backend == "unsloth"
 
-        # --- Tokenizer ---
-        console.print(f"[dim]Loading tokenizer: {cfg.base}[/]")
-        self.tokenizer = AutoTokenizer.from_pretrained(cfg.base, trust_remote_code=True)
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
+        if use_unsloth:
+            self._setup_unsloth(cfg, tcfg)
+        else:
+            self._setup_transformers(cfg, tcfg)
 
-        # --- Quantization ---
-        bnb_config = None
-        if tcfg.quantization == "4bit":
-            import torch
-
-            bnb_config = BitsAndBytesConfig(
-                load_in_4bit=True,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
-                bnb_4bit_use_double_quant=True,
-            )
-        elif tcfg.quantization == "8bit":
-            bnb_config = BitsAndBytesConfig(load_in_8bit=True)
-
-        # --- Model ---
-        console.print(f"[dim]Loading model: {cfg.base}[/]")
-        model_kwargs = {"trust_remote_code": True, "device_map": "auto"}
-        if bnb_config:
-            model_kwargs["quantization_config"] = bnb_config
-
-        self.model = AutoModelForCausalLM.from_pretrained(cfg.base, **model_kwargs)
-
-        if tcfg.quantization in ("4bit", "8bit"):
-            self.model = prepare_model_for_kbit_training(self.model)
-
-        # --- LoRA ---
-        target_modules = tcfg.lora.target_modules
-        if target_modules == "auto":
-            target_modules = None  # peft will auto-detect
-
-        lora_config = LoraConfig(
-            r=tcfg.lora.r,
-            lora_alpha=tcfg.lora.alpha,
-            lora_dropout=tcfg.lora.dropout,
-            target_modules=target_modules,
-            task_type=TaskType.CAUSAL_LM,
-            bias="none",
-        )
-        self.model = get_peft_model(self.model, lora_config)
         trainable, total = self.model.get_nb_trainable_parameters()
         pct = 100 * trainable / total
         console.print(
@@ -187,6 +142,72 @@ class SFTTrainerWrapper:
         )
 
         self._output_dir = str(output_dir)
+
+    def _setup_transformers(self, cfg, tcfg):
+        """Load model via standard transformers + peft pipeline."""
+        from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+        console.print(f"[dim]Loading tokenizer: {cfg.base}[/]")
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg.base, trust_remote_code=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        # Quantization
+        bnb_config = None
+        if tcfg.quantization == "4bit":
+            import torch
+
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
+        elif tcfg.quantization == "8bit":
+            bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+
+        console.print(f"[dim]Loading model: {cfg.base}[/]")
+        model_kwargs = {"trust_remote_code": True, "device_map": "auto"}
+        if bnb_config:
+            model_kwargs["quantization_config"] = bnb_config
+
+        self.model = AutoModelForCausalLM.from_pretrained(cfg.base, **model_kwargs)
+
+        if tcfg.quantization in ("4bit", "8bit"):
+            self.model = prepare_model_for_kbit_training(self.model)
+
+        # LoRA
+        target_modules = tcfg.lora.target_modules
+        if target_modules == "auto":
+            target_modules = None
+
+        lora_config = LoraConfig(
+            r=tcfg.lora.r,
+            lora_alpha=tcfg.lora.alpha,
+            lora_dropout=tcfg.lora.dropout,
+            target_modules=target_modules,
+            task_type=TaskType.CAUSAL_LM,
+            bias="none",
+        )
+        self.model = get_peft_model(self.model, lora_config)
+
+    def _setup_unsloth(self, cfg, tcfg):
+        """Load model via unsloth FastLanguageModel (2-5x faster)."""
+        from soup_cli.utils.unsloth import load_model_and_tokenizer
+
+        console.print(f"[dim]Loading model via [bold]unsloth[/]: {cfg.base}[/]")
+        self.model, self.tokenizer = load_model_and_tokenizer(
+            model_name=cfg.base,
+            max_seq_length=cfg.data.max_length,
+            quantization=tcfg.quantization,
+            lora_r=tcfg.lora.r,
+            lora_alpha=tcfg.lora.alpha,
+            lora_dropout=tcfg.lora.dropout,
+            target_modules=tcfg.lora.target_modules,
+        )
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
 
     def train(
         self,

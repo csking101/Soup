@@ -104,6 +104,7 @@ soup export --model ./output --format gguf --quant q4_k_m
 ```yaml
 base: meta-llama/Llama-3.1-8B-Instruct
 task: sft
+# backend: unsloth  # 2-5x faster, pip install 'soup-cli[fast]'
 
 data:
   train: ./data/train.jsonl
@@ -121,6 +122,39 @@ training:
 
 output: ./output
 ```
+
+## Unsloth Backend (2-5x Faster Training)
+
+Use the [Unsloth](https://github.com/unslothai/unsloth) backend for significantly faster training and up to 80% less VRAM:
+
+```bash
+# Install unsloth support
+pip install 'soup-cli[fast]'
+```
+
+Then add one line to your config:
+
+```yaml
+base: meta-llama/Llama-3.1-8B-Instruct
+task: sft
+backend: unsloth  # 2-5x faster, -80% VRAM
+
+data:
+  train: ./data/train.jsonl
+  format: alpaca
+
+training:
+  epochs: 3
+  lr: 2e-5
+  quantization: 4bit
+  lora:
+    r: 64
+    alpha: 16
+```
+
+Works with all training tasks: SFT, DPO, and GRPO. If unsloth is installed but not enabled, Soup will suggest it automatically.
+
+> **Tip:** Soup auto-detects unsloth. When installed, you'll see a hint during `soup train` if you haven't enabled it yet.
 
 ## DPO Training
 
@@ -545,6 +579,7 @@ soup --verbose <command>                      Full traceback on errors
 
 | Extra | Install | What it adds |
 |---|---|---|
+| `fast` | `pip install 'soup-cli[fast]'` | Unsloth backend (2-5x faster, -80% VRAM) |
 | `serve` | `pip install 'soup-cli[serve]'` | Inference server (FastAPI + uvicorn) |
 | `data` | `pip install 'soup-cli[data]'` | Deduplication (MinHash via datasketch) |
 | `eval` | `pip install 'soup-cli[eval]'` | Benchmark evaluation (lm-evaluation-harness) |

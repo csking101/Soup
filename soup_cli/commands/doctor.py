@@ -31,6 +31,7 @@ DEPS = [
     ("wandb", "wandb", "0.15.0", False),
     ("deepspeed", "deepspeed", "0.12.0", False),
     ("httpx", "httpx", "0.24.0", False),
+    ("unsloth", "unsloth", "2024.8", False),
 ]
 
 

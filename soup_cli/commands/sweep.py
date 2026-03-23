@@ -290,6 +290,7 @@ def _set_nested_param(config_dict: dict, key: str, value) -> dict:
         "grpo_beta": "training.grpo_beta",
         "num_generations": "training.num_generations",
         "reward_fn": "training.reward_fn",
+        "backend": "backend",
     }
 
     full_key = shortcuts.get(key, key)

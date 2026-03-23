@@ -100,17 +100,33 @@ def train(
     # Detect hardware
     device, device_name = detect_device()
     gpu_info = get_gpu_info()
+
+    backend_label = cfg.backend
+    if cfg.backend == "unsloth":
+        backend_label = "unsloth [green](fast mode)[/]"
+
     console.print(
         Panel(
-            f"Device: [bold]{device_name}[/]\n"
-            f"Memory: [bold]{gpu_info['memory_total']}[/]\n"
-            f"Model:  [bold]{cfg.base}[/]\n"
-            f"Task:   [bold]{cfg.task}[/]\n"
-            f"LoRA:   [bold]r={cfg.training.lora.r}, alpha={cfg.training.lora.alpha}[/]\n"
-            f"Quant:  [bold]{cfg.training.quantization}[/]",
+            f"Device:  [bold]{device_name}[/]\n"
+            f"Memory:  [bold]{gpu_info['memory_total']}[/]\n"
+            f"Model:   [bold]{cfg.base}[/]\n"
+            f"Task:    [bold]{cfg.task}[/]\n"
+            f"Backend: [bold]{backend_label}[/]\n"
+            f"LoRA:    [bold]r={cfg.training.lora.r}, alpha={cfg.training.lora.alpha}[/]\n"
+            f"Quant:   [bold]{cfg.training.quantization}[/]",
             title="Training Setup",
         )
     )
+
+    # Suggest unsloth if available but not being used
+    if cfg.backend == "transformers":
+        from soup_cli.utils.unsloth import is_unsloth_available
+
+        if is_unsloth_available():
+            console.print(
+                "[dim]Tip: unsloth is installed. Add [bold]backend: unsloth[/dim]"
+                "[dim] to soup.yaml for 2-5x faster training.[/]"
+            )
 
     if not dry_run and not yes:
         if not typer.confirm("Start training?", default=True):

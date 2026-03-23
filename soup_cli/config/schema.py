@@ -67,6 +67,10 @@ class SoupConfig(BaseModel):
 
     base: str = Field(..., description="Base model name or path (HF model ID)")
     task: Literal["sft", "dpo", "grpo"] = Field(default="sft", description="Training task type")
+    backend: Literal["transformers", "unsloth"] = Field(
+        default="transformers",
+        description="Training backend: transformers (default) or unsloth (2-5x faster)",
+    )
     data: DataConfig
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     output: str = Field(default="./output", description="Output directory for trained model")
@@ -81,6 +85,7 @@ TEMPLATES: dict[str, str] = {
 
 base: meta-llama/Llama-3.1-8B-Instruct
 task: sft
+# backend: unsloth  # 2-5x faster, pip install 'soup-cli[fast]'
 
 data:
   train: ./data/train.jsonl
@@ -105,6 +110,7 @@ output: ./output
 
 base: codellama/CodeLlama-7b-Instruct-hf
 task: sft
+# backend: unsloth  # 2-5x faster, pip install 'soup-cli[fast]'
 
 data:
   train: ./data/code_train.jsonl
@@ -129,6 +135,7 @@ output: ./output
 
 base: meta-llama/Llama-3.1-8B-Instruct
 task: grpo
+# backend: unsloth  # 2-5x faster, pip install 'soup-cli[fast]'
 
 data:
   train: ./data/reasoning_train.jsonl
@@ -157,6 +164,7 @@ output: ./output
 
 base: meta-llama/Llama-3.1-8B-Instruct
 task: sft
+# backend: unsloth  # 2-5x faster, pip install 'soup-cli[fast]'
 
 data:
   train: ./data/medical_train.jsonl

@@ -43,7 +43,9 @@ soup train --config soup.yaml
 
 **Data pipeline:** `data/loader.py` handles local files (JSONL/JSON/CSV/Parquet) and HuggingFace datasets. `data/formats.py` auto-detects and normalizes alpaca/sharegpt/chatml formats into a unified `{"messages": [...]}` structure. Also supports reverse conversion via `messages_to_format()`.
 
-**Trainer:** `trainer/sft.py` (`SFTTrainerWrapper`), `trainer/dpo.py` (`DPOTrainerWrapper`), and `trainer/grpo.py` (`GRPOTrainerWrapper`) wrap HuggingFace's SFTTrainer/DPOTrainer/GRPOTrainer with auto quantization (BitsAndBytes), LoRA (PEFT), and batch size estimation. Heavy ML imports are lazy (inside methods) so CLI stays fast for non-training commands. All trainers enable Rich progress bars for HuggingFace Hub model downloads via `_enable_hf_transfer_progress()`.
+**Trainer:** `trainer/sft.py` (`SFTTrainerWrapper`), `trainer/dpo.py` (`DPOTrainerWrapper`), and `trainer/grpo.py` (`GRPOTrainerWrapper`) wrap HuggingFace's SFTTrainer/DPOTrainer/GRPOTrainer with auto quantization (BitsAndBytes), LoRA (PEFT), and batch size estimation. Heavy ML imports are lazy (inside methods) so CLI stays fast for non-training commands. All trainers enable Rich progress bars for HuggingFace Hub model downloads via `_enable_hf_transfer_progress()`. All trainers support `backend: unsloth` — when enabled, model loading is delegated to `utils/unsloth.py` which uses `unsloth.FastLanguageModel` for 2-5x faster training.
+
+**Unsloth backend:** `utils/unsloth.py` provides `is_unsloth_available()`, `get_unsloth_version()`, and `load_model_and_tokenizer()`. The latter uses `FastLanguageModel.from_pretrained()` + `FastLanguageModel.get_peft_model()` which handles quantization, LoRA patching, and kernel optimization internally. Config: `backend: unsloth` (default: `transformers`). Install: `pip install 'soup-cli[fast]'`. Auto-detection: if unsloth is installed but not enabled, `commands/train.py` shows a hint.
 
 **GRPO (Group Relative Policy Optimization):** `trainer/grpo.py` implements reasoning model training (DeepSeek-R1 style). Generates multiple completions per prompt, scores them with reward functions, and optimizes using group-relative advantages. `trainer/rewards.py` provides built-in reward functions (`accuracy` — checks final answer, `format` — checks `<think>` blocks) and supports custom rewards via Python files. Config: `task: grpo`, `grpo_beta`, `num_generations`, `reward_fn`.
 
@@ -164,3 +166,4 @@ Test suite lives in `tests/`:
 | `test_quickstart.py` | `soup quickstart` demo, data/config creation, --dry-run |
 | `test_grpo.py` | GRPO config, rewards, data prep, template, sweep shortcuts |
 | `test_progress.py` | Rich download progress bar, `_enable_hf_transfer_progress` |
+| `test_unsloth.py` | Unsloth backend config, detection, trainer integration, templates |
