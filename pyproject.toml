@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "soup-cli"
-version = "0.7.0"
+version = "0.7.1"
 description = "Fine-tune LLMs in one command. No SSH, no config hell."
 readme = "README.md"
 license = "MIT"
@@ -60,9 +60,6 @@ Issues = "https://github.com/MakazhanAlpamys/Soup/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["soup_cli"]
-
-[tool.hatch.build.targets.wheel.force-include]
-"soup_cli/ui/static" = "soup_cli/ui/static"
 
 [tool.ruff]
 target-version = "py39"
