@@ -290,6 +290,10 @@ def _set_nested_param(config_dict: dict, key: str, value) -> dict:
         "grpo_beta": "training.grpo_beta",
         "num_generations": "training.num_generations",
         "reward_fn": "training.reward_fn",
+        "ppo_epochs": "training.ppo_epochs",
+        "ppo_clip_ratio": "training.ppo_clip_ratio",
+        "ppo_kl_penalty": "training.ppo_kl_penalty",
+        "reward_model": "training.reward_model",
         "backend": "backend",
     }
 
@@ -347,6 +351,18 @@ def _run_single(base_cfg, params: dict, run_name: str, config_path: Path) -> dic
         from soup_cli.trainer.dpo import DPOTrainerWrapper
 
         trainer_wrapper = DPOTrainerWrapper(cfg, device=device)
+    elif cfg.task == "grpo":
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+
+        trainer_wrapper = GRPOTrainerWrapper(cfg, device=device)
+    elif cfg.task == "ppo":
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        trainer_wrapper = PPOTrainerWrapper(cfg, device=device)
+    elif cfg.task == "reward_model":
+        from soup_cli.trainer.reward_model import RewardModelTrainerWrapper
+
+        trainer_wrapper = RewardModelTrainerWrapper(cfg, device=device)
     else:
         trainer_wrapper = SFTTrainerWrapper(cfg, device=device)
     trainer_wrapper.setup(dataset)

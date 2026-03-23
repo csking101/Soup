@@ -192,6 +192,18 @@ def train(
         trainer_wrapper = GRPOTrainerWrapper(
             cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,
         )
+    elif cfg.task == "ppo":
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        trainer_wrapper = PPOTrainerWrapper(
+            cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,
+        )
+    elif cfg.task == "reward_model":
+        from soup_cli.trainer.reward_model import RewardModelTrainerWrapper
+
+        trainer_wrapper = RewardModelTrainerWrapper(
+            cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,
+        )
     else:
         trainer_wrapper = SFTTrainerWrapper(
             cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,

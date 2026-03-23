@@ -69,6 +69,7 @@ soup init --template code       # code generation
 soup init --template medical    # domain expert
 soup init --template reasoning  # GRPO reasoning training
 soup init --template vision     # vision/multimodal fine-tune
+soup init --template rlhf       # full RLHF pipeline (SFT→RM→PPO)
 ```
 
 ### 3. Train
@@ -154,7 +155,7 @@ training:
     alpha: 16
 ```
 
-Works with all training tasks: SFT, DPO, and GRPO. If unsloth is installed but not enabled, Soup will suggest it automatically.
+Works with all training tasks: SFT, DPO, GRPO, and PPO. If unsloth is installed but not enabled, Soup will suggest it automatically.
 
 > **Tip:** Soup auto-detects unsloth. When installed, you'll see a hint during `soup train` if you haven't enabled it yet.
 
@@ -240,7 +241,7 @@ output: ./output
 - **QAT** (`quantization_aware: true`): Better quality when you plan to deploy with aggressive quantization (int8/int4). ~5-10% slower training, but the model learns to compensate for quantization noise.
 - **Post-training quantization** (default): Faster training, good enough for most use cases. Quantize after training with `soup export --quant q4_k_m`.
 
-QAT works with all training tasks (SFT, DPO, GRPO) and vision modality. Not compatible with the unsloth backend. After QAT training, export to GGUF normally with `soup export`.
+QAT works with all training tasks (SFT, DPO, GRPO, PPO) and vision modality. Not compatible with the unsloth backend. After QAT training, export to GGUF normally with `soup export`.
 
 ## DPO Training
 
@@ -311,6 +312,58 @@ def reward_fn(completions, **kwargs):
 training:
   reward_fn: ./my_reward.py
 ```
+
+## PPO / Full RLHF Pipeline
+
+Train models with the full RLHF pipeline: SFT warmup → Reward Model → PPO alignment.
+
+```bash
+# Create an RLHF config
+soup init --template rlhf
+```
+
+**Step 1: SFT warmup** — fine-tune a base model on your data:
+```yaml
+base: meta-llama/Llama-3.1-8B-Instruct
+task: sft
+data:
+  train: ./data/train.jsonl
+  format: alpaca
+output: ./output_sft
+```
+
+**Step 2: Train reward model** — learn preferences from human feedback:
+```yaml
+base: meta-llama/Llama-3.1-8B-Instruct
+task: reward_model
+data:
+  train: ./data/preferences.jsonl
+  format: dpo
+output: ./output_rm
+```
+
+**Step 3: PPO alignment** — optimize the policy using the reward model:
+```yaml
+base: meta-llama/Llama-3.1-8B-Instruct
+task: ppo
+data:
+  train: ./data/prompts.jsonl
+  format: chatml
+training:
+  reward_model: ./output_rm
+  ppo_epochs: 4
+  ppo_clip_ratio: 0.2
+  ppo_kl_penalty: 0.05
+  lora:
+    r: 64
+    alpha: 16
+  quantization: 4bit
+output: ./output_ppo
+```
+
+PPO supports two reward sources:
+- **Reward model** (`reward_model`): pre-trained reward model (from step 2)
+- **Reward function** (`reward_fn`): callable function (same as GRPO — `accuracy`, `format`, or custom `.py`)
 
 ## Chat with your model
 
@@ -680,7 +733,7 @@ soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 ## All Commands
 
 ```
-soup init [--template chat|code|medical|reasoning|vision]  Create config
+soup init [--template chat|code|medical|reasoning|vision|rlhf]  Create config
 soup train --config soup.yaml                 Start training
 soup chat --model ./output                    Interactive chat
 soup push --model ./output --repo user/name   Upload to HuggingFace

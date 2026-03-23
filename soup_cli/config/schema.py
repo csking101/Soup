@@ -68,13 +68,29 @@ class TrainingConfig(BaseModel):
         default="accuracy",
         description="Reward function: 'accuracy', 'format', or path to custom .py file",
     )
+    # PPO-specific
+    ppo_epochs: int = Field(
+        default=4, ge=1, description="Number of PPO optimization epochs per batch"
+    )
+    ppo_clip_ratio: float = Field(
+        default=0.2, gt=0, le=1.0, description="PPO clipping range for policy ratio"
+    )
+    ppo_kl_penalty: float = Field(
+        default=0.05, ge=0, description="KL divergence penalty coefficient for PPO"
+    )
+    reward_model: Optional[str] = Field(
+        default=None,
+        description="Path or HF ID of a trained reward model for PPO",
+    )
 
 
 class SoupConfig(BaseModel):
     """Root config for soup.yaml."""
 
     base: str = Field(..., description="Base model name or path (HF model ID)")
-    task: Literal["sft", "dpo", "grpo"] = Field(default="sft", description="Training task type")
+    task: Literal["sft", "dpo", "grpo", "ppo", "reward_model"] = Field(
+        default="sft", description="Training task type"
+    )
     modality: Literal["text", "vision"] = Field(
         default="text",
         description="Training modality: text (default) or vision (multimodal)",
@@ -223,5 +239,43 @@ training:
   quantization: 4bit
 
 output: ./output
+""",
+    "rlhf": """# Soup template: Full RLHF Pipeline (SFT + Reward Model + PPO)
+# Three-stage training: 1) SFT warmup, 2) Reward model, 3) PPO alignment
+#
+# Usage:
+#   Step 1: soup train --config soup_sft.yaml       # SFT warmup
+#   Step 2: soup train --config soup_rm.yaml         # Train reward model
+#   Step 3: soup train --config soup_ppo.yaml        # PPO with reward model
+#
+# This template generates the PPO config (step 3).
+# For steps 1-2, use: soup init --template chat (SFT) and edit task to reward_model.
+
+base: meta-llama/Llama-3.1-8B-Instruct
+task: ppo
+# backend: unsloth  # 2-5x faster, pip install 'soup-cli[fast]'
+
+data:
+  train: ./data/prompts.jsonl
+  format: chatml
+  val_split: 0.1
+  max_length: 2048
+
+training:
+  epochs: 1
+  lr: 1e-6
+  batch_size: auto
+  gradient_accumulation_steps: 4
+  lora:
+    r: 64
+    alpha: 16
+    target_modules: auto
+  quantization: 4bit
+  reward_model: ./output_rm
+  ppo_epochs: 4
+  ppo_clip_ratio: 0.2
+  ppo_kl_penalty: 0.05
+
+output: ./output_ppo
 """,
 }

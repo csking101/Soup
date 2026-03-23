@@ -17,7 +17,7 @@ def init(
         None,
         "--template",
         "-t",
-        help="Use a template: chat, code, medical, reasoning, vision",
+        help="Use a template: chat, code, medical, reasoning, vision, rlhf",
     ),
     output: str = typer.Option(
         "soup.yaml",
@@ -62,7 +62,7 @@ def _interactive_wizard() -> str:
         "Base model",
         default="meta-llama/Llama-3.1-8B-Instruct",
     )
-    task = Prompt.ask("Task", choices=["sft", "dpo", "grpo"], default="sft")
+    task = Prompt.ask("Task", choices=["sft", "dpo", "grpo", "ppo", "reward_model"], default="sft")
     data_path = Prompt.ask("Training data path", default="./data/train.jsonl")
     data_format = Prompt.ask(
         "Data format", choices=["alpaca", "sharegpt", "chatml"], default="alpaca",
@@ -82,6 +82,15 @@ def _interactive_wizard() -> str:
         grpo_block = f"""  grpo_beta: 0.1
   num_generations: 4
   reward_fn: {reward_fn}
+"""
+    elif task == "ppo":
+        reward_model_path = Prompt.ask(
+            "Reward model path", default="./output_rm",
+        )
+        grpo_block = f"""  reward_model: {reward_model_path}
+  ppo_epochs: 4
+  ppo_clip_ratio: 0.2
+  ppo_kl_penalty: 0.05
 """
 
     return f"""# Soup training config

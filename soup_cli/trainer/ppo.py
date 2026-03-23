@@ -1,0 +1,448 @@
+"""PPO (Proximal Policy Optimization) trainer — wraps trl.PPOTrainer.
+
+PPO is the classic RLHF alignment method: generate completions, score them
+with a reward model (or reward function), then optimize the policy using
+clipped surrogate objectives with a KL penalty against a frozen reference model.
+
+Full RLHF pipeline:  SFT → Reward Model → PPO
+"""
+
+import time
+from pathlib import Path
+from typing import Optional
+
+from rich.console import Console
+
+from soup_cli.config.schema import SoupConfig
+from soup_cli.utils.gpu import estimate_batch_size, model_size_from_name
+
+console = Console()
+
+
+class PPOTrainerWrapper:
+    """High-level wrapper for PPO training from SoupConfig.
+
+    PPO generates completions for each prompt, scores them with a reward model
+    or reward function, and optimizes using proximal policy optimization with
+    a KL penalty against a frozen reference model.
+
+    Supports two reward sources:
+      - reward_model: path/HF ID of a trained reward model (AutoModelForSequenceClassification)
+      - reward_fn: callable reward function (same as GRPO — 'accuracy', 'format', or custom .py)
+
+    At least one of reward_model or reward_fn must be specified.
+    """
+
+    def __init__(
+        self,
+        config: SoupConfig,
+        device: str = "cuda",
+        report_to: str = "none",
+        deepspeed_config: Optional[str] = None,
+    ):
+        self.config = config
+        self.device = device
+        self.report_to = report_to
+        self.deepspeed_config = deepspeed_config
+        self.model = None
+        self.tokenizer = None
+        self.trainer = None
+        self.reward_model_instance = None
+        self.reward_fn = None
+
+    def setup(self, dataset: dict):
+        """Load model, tokenizer, reward model/fn, apply LoRA, create PPO trainer."""
+        from datasets import Dataset
+        from trl import PPOConfig, PPOTrainer
+
+        # Enable Rich progress bar for HuggingFace downloads
+        from soup_cli.trainer.sft import _enable_hf_transfer_progress
+
+        _enable_hf_transfer_progress()
+
+        cfg = self.config
+        tcfg = cfg.training
+        use_unsloth = cfg.backend == "unsloth"
+
+        # --- Load reward source ---
+        self._setup_reward(cfg, tcfg)
+
+        if use_unsloth:
+            self._setup_unsloth(cfg, tcfg)
+        else:
+            self._setup_transformers(cfg, tcfg)
+
+        trainable, total = self.model.get_nb_trainable_parameters()
+        pct = 100 * trainable / total
+        console.print(
+            f"[green]LoRA applied:[/] {trainable:,} trainable"
+            f" / {total:,} total ({pct:.2f}%)"
+        )
+
+        # --- Batch size ---
+        batch_size = tcfg.batch_size
+        if batch_size == "auto":
+            from soup_cli.utils.gpu import get_gpu_info
+
+            gpu_info = get_gpu_info()
+            model_size = model_size_from_name(cfg.base)
+            batch_size = estimate_batch_size(
+                model_params_b=model_size,
+                seq_length=cfg.data.max_length,
+                gpu_memory_bytes=gpu_info["memory_total_bytes"],
+                quantization=tcfg.quantization,
+                lora_r=tcfg.lora.r,
+            )
+            # PPO needs memory for policy + ref model + reward model → conservative
+            batch_size = max(1, batch_size // 4)
+            console.print(f"[green]Auto batch size (PPO):[/] {batch_size}")
+
+        # --- Dataset ---
+        train_data = _prepare_ppo_dataset(dataset["train"])
+        train_ds = Dataset.from_list(train_data)
+
+        # --- Output dir ---
+        output_dir = Path(cfg.output)
+        if cfg.experiment_name:
+            output_dir = output_dir / cfg.experiment_name
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        # --- PPO config ---
+        ppo_config = PPOConfig(
+            output_dir=str(output_dir),
+            per_device_train_batch_size=batch_size,
+            gradient_accumulation_steps=tcfg.gradient_accumulation_steps,
+            learning_rate=tcfg.lr,
+            ppo_epochs=tcfg.ppo_epochs,
+            cliprange=tcfg.ppo_clip_ratio,
+            init_kl_coef=tcfg.ppo_kl_penalty,
+            log_with=self.report_to if self.report_to != "none" else None,
+            optimize_cuda_cache=self.device == "cuda",
+        )
+
+        # --- Build reward functions list for PPOTrainer ---
+        reward_funcs = []
+        if self.reward_model_instance is not None:
+            reward_funcs.append(self.reward_model_instance)
+        if self.reward_fn is not None:
+            reward_funcs.append(self.reward_fn)
+
+        # --- Trainer ---
+        self.trainer = PPOTrainer(
+            config=ppo_config,
+            model=self.model,
+            tokenizer=self.tokenizer,
+            dataset=train_ds,
+        )
+
+        self._output_dir = str(output_dir)
+        self._train_ds = train_ds
+        self._batch_size = batch_size
+        self._num_epochs = tcfg.epochs
+        self._max_length = cfg.data.max_length
+
+    def _setup_reward(self, cfg, tcfg):
+        """Load reward model and/or reward function."""
+        # Reward model (pre-trained classifier)
+        if tcfg.reward_model:
+            self.reward_model_instance = _load_reward_model(
+                tcfg.reward_model, self.device,
+            )
+            console.print(f"[green]Reward model loaded:[/] {tcfg.reward_model}")
+
+        # Reward function (callable — reuse GRPO reward functions)
+        if tcfg.reward_fn:
+            from soup_cli.trainer.rewards import load_reward_fn
+
+            self.reward_fn = load_reward_fn(tcfg.reward_fn)
+
+        if self.reward_model_instance is None and self.reward_fn is None:
+            console.print(
+                "[yellow]Warning: No reward_model or reward_fn specified. "
+                "Using default reward_fn='accuracy'.[/]"
+            )
+            from soup_cli.trainer.rewards import load_reward_fn
+
+            self.reward_fn = load_reward_fn("accuracy")
+
+    def _setup_transformers(self, cfg, tcfg):
+        """Load model via standard transformers + peft pipeline."""
+        from peft import LoraConfig, TaskType, get_peft_model, prepare_model_for_kbit_training
+        from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+
+        console.print(f"[dim]Loading tokenizer: {cfg.base}[/]")
+        self.tokenizer = AutoTokenizer.from_pretrained(cfg.base, trust_remote_code=True)
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+        bnb_config = None
+        if tcfg.quantization == "4bit":
+            import torch
+
+            bnb_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_use_double_quant=True,
+            )
+        elif tcfg.quantization == "8bit":
+            bnb_config = BitsAndBytesConfig(load_in_8bit=True)
+
+        console.print(f"[dim]Loading model: {cfg.base}[/]")
+        model_kwargs = {"trust_remote_code": True, "device_map": "auto"}
+        if bnb_config:
+            model_kwargs["quantization_config"] = bnb_config
+
+        self.model = AutoModelForCausalLM.from_pretrained(cfg.base, **model_kwargs)
+
+        if tcfg.quantization in ("4bit", "8bit"):
+            self.model = prepare_model_for_kbit_training(self.model)
+
+        target_modules = tcfg.lora.target_modules
+        if target_modules == "auto":
+            target_modules = None
+
+        lora_config = LoraConfig(
+            r=tcfg.lora.r,
+            lora_alpha=tcfg.lora.alpha,
+            lora_dropout=tcfg.lora.dropout,
+            target_modules=target_modules,
+            task_type=TaskType.CAUSAL_LM,
+            bias="none",
+        )
+        self.model = get_peft_model(self.model, lora_config)
+
+        # QAT — insert fake quantization ops after LoRA
+        if tcfg.quantization_aware:
+            from soup_cli.utils.qat import prepare_model_for_qat
+
+            self.model = prepare_model_for_qat(self.model)
+
+    def _setup_unsloth(self, cfg, tcfg):
+        """Load model via unsloth FastLanguageModel (2-5x faster)."""
+        from soup_cli.utils.unsloth import load_model_and_tokenizer
+
+        console.print(f"[dim]Loading model via [bold]unsloth[/]: {cfg.base}[/]")
+        self.model, self.tokenizer = load_model_and_tokenizer(
+            model_name=cfg.base,
+            max_seq_length=cfg.data.max_length,
+            quantization=tcfg.quantization,
+            lora_r=tcfg.lora.r,
+            lora_alpha=tcfg.lora.alpha,
+            lora_dropout=tcfg.lora.dropout,
+            target_modules=tcfg.lora.target_modules,
+        )
+        if self.tokenizer.pad_token is None:
+            self.tokenizer.pad_token = self.tokenizer.eos_token
+
+    def train(
+        self,
+        display: Optional[object] = None,
+        tracker: Optional[object] = None,
+        run_id: str = "",
+        resume_from_checkpoint: Optional[str] = None,
+    ) -> dict:
+        """Run PPO training loop and return results summary.
+
+        PPO training is a manual loop:
+          1. Sample prompts from dataset
+          2. Generate completions with the policy model
+          3. Score completions with reward model/function
+          4. Run PPO optimization step
+          5. Repeat for all batches × epochs
+        """
+        import torch
+
+        start = time.time()
+        step = 0
+        all_rewards = []
+        log_history = []
+
+        for epoch in range(self._num_epochs):
+            for batch_idx in range(0, len(self._train_ds), self._batch_size):
+                batch_end = min(batch_idx + self._batch_size, len(self._train_ds))
+                batch = self._train_ds[batch_idx:batch_end]
+
+                # Tokenize prompts
+                prompt_texts = batch["prompt_text"]
+                query_tensors = [
+                    self.tokenizer.encode(p, return_tensors="pt").squeeze()
+                    for p in prompt_texts
+                ]
+
+                # Generate completions
+                response_tensors = []
+                for query in query_tensors:
+                    gen_kwargs = {
+                        "max_new_tokens": min(256, self._max_length // 2),
+                        "do_sample": True,
+                        "top_p": 0.9,
+                        "temperature": 0.7,
+                    }
+                    response = self.trainer.generate(query.unsqueeze(0), **gen_kwargs)
+                    response_tensors.append(response.squeeze()[len(query):])
+
+                # Compute rewards
+                rewards = self._compute_rewards(
+                    query_tensors, response_tensors, batch,
+                )
+
+                # PPO step
+                stats = self.trainer.step(query_tensors, response_tensors, rewards)
+                step += 1
+
+                mean_reward = torch.stack(rewards).mean().item()
+                all_rewards.append(mean_reward)
+
+                log_entry = {
+                    "step": step,
+                    "epoch": epoch + 1,
+                    "loss": stats.get("ppo/loss/total", 0),
+                    "reward": mean_reward,
+                    "kl": stats.get("ppo/mean_kl", 0),
+                    "lr": stats.get("ppo/learning_rate", self.config.training.lr),
+                }
+                log_history.append(log_entry)
+
+                # Update display
+                if display and hasattr(display, "update"):
+                    display.update(
+                        step=step,
+                        epoch=epoch + 1,
+                        loss=log_entry["loss"],
+                        lr=log_entry["lr"],
+                    )
+
+                # Update tracker
+                if tracker and run_id:
+                    tracker.log_metrics(
+                        run_id=run_id,
+                        step=step,
+                        epoch=epoch + 1,
+                        loss=log_entry["loss"],
+                        lr=log_entry["lr"],
+                    )
+
+        duration = time.time() - start
+
+        # Save final model (LoRA adapter)
+        self.model.save_pretrained(self._output_dir)
+        self.tokenizer.save_pretrained(self._output_dir)
+
+        # Extract metrics
+        losses = [entry["loss"] for entry in log_history if "loss" in entry]
+
+        hours = int(duration // 3600)
+        minutes = int((duration % 3600) // 60)
+        duration_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+
+        return {
+            "initial_loss": losses[0] if losses else 0,
+            "final_loss": losses[-1] if losses else 0,
+            "duration": duration_str,
+            "duration_secs": duration,
+            "output_dir": self._output_dir,
+            "total_steps": step,
+        }
+
+    def _compute_rewards(self, query_tensors, response_tensors, batch):
+        """Compute rewards using reward model and/or reward function."""
+        import torch
+
+        rewards = []
+        num_samples = len(query_tensors)
+
+        if self.reward_model_instance is not None:
+            # Score with reward model
+            for query, response in zip(query_tensors, response_tensors):
+                full_ids = torch.cat([query, response]).unsqueeze(0)
+                full_ids = full_ids.to(self.reward_model_instance.device)
+                with torch.no_grad():
+                    output = self.reward_model_instance(full_ids)
+                    score = output.logits[:, -1].squeeze().float()
+                rewards.append(score.cpu())
+
+        elif self.reward_fn is not None:
+            # Score with reward function
+            completions = []
+            for response in response_tensors:
+                text = self.tokenizer.decode(response, skip_special_tokens=True)
+                completions.append([{"role": "assistant", "content": text}])
+
+            kwargs = {}
+            if "answer" in batch:
+                kwargs["answer"] = batch["answer"]
+
+            scores = self.reward_fn(completions, **kwargs)
+            rewards = [torch.tensor(score, dtype=torch.float32) for score in scores]
+
+        else:
+            # Fallback: zero reward
+            rewards = [torch.tensor(0.0) for _ in range(num_samples)]
+
+        return rewards
+
+
+def _load_reward_model(model_path: str, device: str = "cuda"):
+    """Load a pre-trained reward model for PPO scoring.
+
+    Reward models are typically AutoModelForSequenceClassification that output
+    a scalar reward score for a given input sequence.
+    """
+    from transformers import AutoModelForSequenceClassification
+
+    console.print(f"[dim]Loading reward model: {model_path}[/]")
+    reward_model = AutoModelForSequenceClassification.from_pretrained(
+        model_path,
+        trust_remote_code=True,
+        device_map="auto",
+        num_labels=1,
+    )
+    reward_model.eval()
+    return reward_model
+
+
+def _prepare_ppo_dataset(data: list[dict]) -> list[dict]:
+    """Convert dataset rows to PPO format.
+
+    PPO expects each row to have a 'prompt_text' field (string for tokenization)
+    and optionally an 'answer' field (for reward function scoring).
+
+    Input can be:
+      - messages format: [{"role": "user", "content": "..."}, ...]
+      - DPO format: {"prompt": "...", "chosen": "...", "rejected": "..."}
+      - prompt field: {"prompt": "..."}
+      - alpaca format: {"instruction": "...", "output": "..."}
+
+    Returns list of dicts with 'prompt_text' (string) and optional 'answer'.
+    """
+    prepared = []
+    for row in data:
+        if "prompt" in row and isinstance(row["prompt"], str):
+            entry = {"prompt_text": row["prompt"]}
+            if "answer" in row:
+                entry["answer"] = row["answer"]
+            prepared.append(entry)
+        elif "messages" in row:
+            messages = row["messages"]
+            # Use user messages as prompt text
+            prompt_parts = [
+                msg["content"] for msg in messages if msg["role"] in ("system", "user")
+            ]
+            entry = {"prompt_text": " ".join(prompt_parts)}
+            prepared.append(entry)
+        elif "prompt" in row and isinstance(row["prompt"], list):
+            # Message list → join content
+            prompt_parts = [msg.get("content", "") for msg in row["prompt"]]
+            entry = {"prompt_text": " ".join(prompt_parts)}
+            if "answer" in row:
+                entry["answer"] = row["answer"]
+            prepared.append(entry)
+        else:
+            # Alpaca fallback
+            instruction = row.get("instruction", row.get("input", ""))
+            entry = {"prompt_text": str(instruction)}
+            if "output" in row:
+                entry["answer"] = row["output"]
+            prepared.append(entry)
+    return prepared
