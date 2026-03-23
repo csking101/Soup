@@ -154,6 +154,12 @@ def train(
         trainer_wrapper = DPOTrainerWrapper(
             cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,
         )
+    elif cfg.task == "grpo":
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+
+        trainer_wrapper = GRPOTrainerWrapper(
+            cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,
+        )
     else:
         trainer_wrapper = SFTTrainerWrapper(
             cfg, device=device, report_to=report_to, deepspeed_config=ds_config_path,

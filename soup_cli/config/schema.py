@@ -49,13 +49,24 @@ class TrainingConfig(BaseModel):
     dpo_beta: float = Field(
         default=0.1, gt=0, description="DPO beta — KL penalty coefficient"
     )
+    # GRPO-specific
+    grpo_beta: float = Field(
+        default=0.1, gt=0, description="GRPO beta — KL penalty coefficient"
+    )
+    num_generations: int = Field(
+        default=4, ge=2, description="Number of generations per prompt for GRPO"
+    )
+    reward_fn: Optional[str] = Field(
+        default="accuracy",
+        description="Reward function: 'accuracy', 'format', or path to custom .py file",
+    )
 
 
 class SoupConfig(BaseModel):
     """Root config for soup.yaml."""
 
     base: str = Field(..., description="Base model name or path (HF model ID)")
-    task: Literal["sft", "dpo"] = Field(default="sft", description="Training task type")
+    task: Literal["sft", "dpo", "grpo"] = Field(default="sft", description="Training task type")
     data: DataConfig
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     output: str = Field(default="./output", description="Output directory for trained model")
@@ -110,6 +121,34 @@ training:
     alpha: 32
     target_modules: auto
   quantization: 4bit
+
+output: ./output
+""",
+    "reasoning": """# Soup template: Reasoning / GRPO
+# Fine-tune a model for chain-of-thought reasoning with GRPO
+
+base: meta-llama/Llama-3.1-8B-Instruct
+task: grpo
+
+data:
+  train: ./data/reasoning_train.jsonl
+  format: sharegpt
+  val_split: 0.1
+  max_length: 4096
+
+training:
+  epochs: 3
+  lr: 1e-5
+  batch_size: auto
+  gradient_accumulation_steps: 8
+  lora:
+    r: 64
+    alpha: 16
+    target_modules: auto
+  quantization: 4bit
+  grpo_beta: 0.1
+  num_generations: 4
+  reward_fn: accuracy
 
 output: ./output
 """,

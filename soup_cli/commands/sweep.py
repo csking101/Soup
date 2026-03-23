@@ -287,6 +287,9 @@ def _set_nested_param(config_dict: dict, key: str, value) -> dict:
         "val_split": "data.val_split",
         "max_length": "data.max_length",
         "dpo_beta": "training.dpo_beta",
+        "grpo_beta": "training.grpo_beta",
+        "num_generations": "training.num_generations",
+        "reward_fn": "training.reward_fn",
     }
 
     full_key = shortcuts.get(key, key)

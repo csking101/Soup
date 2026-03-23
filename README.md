@@ -63,9 +63,10 @@ pip install git+https://github.com/MakazhanAlpamys/Soup.git
 soup init
 
 # Or use a template
-soup init --template chat    # conversational fine-tune
-soup init --template code    # code generation
-soup init --template medical # domain expert
+soup init --template chat       # conversational fine-tune
+soup init --template code       # code generation
+soup init --template medical    # domain expert
+soup init --template reasoning  # GRPO reasoning training
 ```
 
 ### 3. Train
@@ -140,6 +141,55 @@ training:
     r: 64
     alpha: 16
   quantization: 4bit
+```
+
+## GRPO Training (Reasoning)
+
+Train reasoning models with Group Relative Policy Optimization (DeepSeek-R1 style):
+
+```yaml
+base: meta-llama/Llama-3.1-8B-Instruct
+task: grpo
+
+data:
+  train: ./data/reasoning_train.jsonl
+  format: sharegpt
+  max_length: 4096
+
+training:
+  epochs: 3
+  lr: 1e-5
+  grpo_beta: 0.1
+  num_generations: 4
+  reward_fn: accuracy   # or 'format', or path to custom .py
+  lora:
+    r: 64
+    alpha: 16
+  quantization: 4bit
+```
+
+```bash
+# Create a reasoning config
+soup init --template reasoning
+
+# Train
+soup train --config soup.yaml
+```
+
+**Built-in reward functions:**
+- `accuracy` — checks if the final answer matches expected (supports `####` and `\boxed{}` formats)
+- `format` — checks for structured `<think>...</think>` reasoning blocks
+
+**Custom reward functions** — point to a Python file:
+```python
+# my_reward.py
+def reward_fn(completions, **kwargs):
+    """Score each completion. Return list of floats."""
+    return [1.0 if "correct" in c[-1]["content"] else 0.0 for c in completions]
+```
+```yaml
+training:
+  reward_fn: ./my_reward.py
 ```
 
 ## Chat with your model
@@ -463,6 +513,7 @@ soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 | LoRA / QLoRA fine-tuning | ✅ |
 | SFT (Supervised Fine-Tune) | ✅ |
 | DPO (Direct Preference Optimization) | ✅ |
+| GRPO (Reasoning / DeepSeek-R1 style) | ✅ |
 | Auto batch size | ✅ |
 | Auto GPU detection (CUDA/MPS/CPU) | ✅ |
 | Live terminal dashboard | ✅ |
@@ -493,7 +544,7 @@ soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 ## All Commands
 
 ```
-soup init [--template chat|code|medical]      Create config
+soup init [--template chat|code|medical|reasoning]  Create config
 soup train --config soup.yaml                 Start training
 soup chat --model ./output                    Interactive chat
 soup push --model ./output --repo user/name   Upload to HuggingFace

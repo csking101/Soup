@@ -17,7 +17,7 @@ def init(
         None,
         "--template",
         "-t",
-        help="Use a template: chat, code, medical",
+        help="Use a template: chat, code, medical, reasoning",
     ),
     output: str = typer.Option(
         "soup.yaml",
@@ -62,7 +62,7 @@ def _interactive_wizard() -> str:
         "Base model",
         default="meta-llama/Llama-3.1-8B-Instruct",
     )
-    task = Prompt.ask("Task", choices=["sft", "dpo"], default="sft")
+    task = Prompt.ask("Task", choices=["sft", "dpo", "grpo"], default="sft")
     data_path = Prompt.ask("Training data path", default="./data/train.jsonl")
     data_format = Prompt.ask(
         "Data format", choices=["alpaca", "sharegpt", "chatml"], default="alpaca",
@@ -71,6 +71,18 @@ def _interactive_wizard() -> str:
     use_qlora = Prompt.ask("Use QLoRA (4-bit)?", choices=["yes", "no"], default="yes")
 
     quantization = "4bit" if use_qlora == "yes" else "none"
+
+    grpo_block = ""
+    if task == "grpo":
+        reward_fn = Prompt.ask(
+            "Reward function", choices=["accuracy", "format", "custom"], default="accuracy",
+        )
+        if reward_fn == "custom":
+            reward_fn = Prompt.ask("Path to reward .py file", default="./reward.py")
+        grpo_block = f"""  grpo_beta: 0.1
+  num_generations: 4
+  reward_fn: {reward_fn}
+"""
 
     return f"""# Soup training config
 # Docs: https://github.com/MakazhanAlpamys/Soup
@@ -92,6 +104,6 @@ training:
     alpha: 16
     target_modules: auto
   quantization: {quantization}
-
+{grpo_block}
 output: ./output
 """

@@ -43,7 +43,9 @@ soup train --config soup.yaml
 
 **Data pipeline:** `data/loader.py` handles local files (JSONL/JSON/CSV/Parquet) and HuggingFace datasets. `data/formats.py` auto-detects and normalizes alpaca/sharegpt/chatml formats into a unified `{"messages": [...]}` structure. Also supports reverse conversion via `messages_to_format()`.
 
-**Trainer:** `trainer/sft.py` (`SFTTrainerWrapper`) and `trainer/dpo.py` (`DPOTrainerWrapper`) wrap HuggingFace's SFTTrainer/DPOTrainer with auto quantization (BitsAndBytes), LoRA (PEFT), and batch size estimation. Heavy ML imports are lazy (inside methods) so CLI stays fast for non-training commands. Both trainers enable Rich progress bars for HuggingFace Hub model downloads via `_enable_hf_transfer_progress()`.
+**Trainer:** `trainer/sft.py` (`SFTTrainerWrapper`), `trainer/dpo.py` (`DPOTrainerWrapper`), and `trainer/grpo.py` (`GRPOTrainerWrapper`) wrap HuggingFace's SFTTrainer/DPOTrainer/GRPOTrainer with auto quantization (BitsAndBytes), LoRA (PEFT), and batch size estimation. Heavy ML imports are lazy (inside methods) so CLI stays fast for non-training commands. All trainers enable Rich progress bars for HuggingFace Hub model downloads via `_enable_hf_transfer_progress()`.
+
+**GRPO (Group Relative Policy Optimization):** `trainer/grpo.py` implements reasoning model training (DeepSeek-R1 style). Generates multiple completions per prompt, scores them with reward functions, and optimizes using group-relative advantages. `trainer/rewards.py` provides built-in reward functions (`accuracy` — checks final answer, `format` — checks `<think>` blocks) and supports custom rewards via Python files. Config: `task: grpo`, `grpo_beta`, `num_generations`, `reward_fn`.
 
 **Monitoring:** `monitoring/callback.py` is a HuggingFace `TrainerCallback` that streams metrics to `monitoring/display.py` (Rich Live panel at 2Hz) and optionally to the experiment tracker.
 
@@ -141,4 +143,5 @@ Test suite lives in `tests/`:
 | `test_errors.py` | Friendly error messages, --verbose flag, error mapping |
 | `test_doctor.py` | `soup doctor` command, version checking, dependency table |
 | `test_quickstart.py` | `soup quickstart` demo, data/config creation, --dry-run |
+| `test_grpo.py` | GRPO config, rewards, data prep, template, sweep shortcuts |
 | `test_progress.py` | Rich download progress bar, `_enable_hf_transfer_progress` |
