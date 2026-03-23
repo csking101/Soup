@@ -506,41 +506,6 @@ soup eval --model ./output --benchmarks mmlu,gsm8k,hellaswag
 soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 ```
 
-## Features
-
-| Feature | Status |
-|---|---|
-| LoRA / QLoRA fine-tuning | ✅ |
-| SFT (Supervised Fine-Tune) | ✅ |
-| DPO (Direct Preference Optimization) | ✅ |
-| GRPO (Reasoning / DeepSeek-R1 style) | ✅ |
-| Auto batch size | ✅ |
-| Auto GPU detection (CUDA/MPS/CPU) | ✅ |
-| Live terminal dashboard | ✅ |
-| Alpaca / ShareGPT / ChatML / DPO formats | ✅ |
-| HuggingFace datasets support | ✅ |
-| Interactive model chat | ✅ |
-| Push to HuggingFace Hub | ✅ |
-| LoRA merge (adapter + base → full model) | ✅ |
-| Export to GGUF (Ollama / llama.cpp) | ✅ |
-| Resume training from checkpoint | ✅ |
-| Weights & Biases integration | ✅ |
-| Experiment tracking (SQLite) | ✅ |
-| Data tools (convert, merge, dedup, stats) | ✅ |
-| Model evaluation (lm-eval) | ✅ |
-| Inference server (OpenAI-compatible) | ✅ |
-| Synthetic data generation | ✅ |
-| Hyperparameter sweep (grid/random + early stopping) | ✅ |
-| Model comparison (diff) | ✅ |
-| Multi-GPU / DeepSpeed | ✅ |
-| Friendly error messages | ✅ |
-| Health check (soup doctor) | ✅ |
-| Rich download progress bars | ✅ |
-| Quickstart demo | ✅ |
-| Confirmation prompts | ✅ |
-| Web dashboard | 🔜 |
-| Cloud mode (BYOG) | 🔜 |
-
 ## All Commands
 
 ```
