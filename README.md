@@ -207,6 +207,41 @@ training:
 
 `soup data inspect` automatically shows image statistics (count, formats, missing files) for vision datasets.
 
+## Quantization-Aware Training (QAT)
+
+Train with simulated quantization for significantly better post-quantization quality compared to standard QLoRA:
+
+```bash
+# Install QAT support
+pip install 'soup-cli[qat]'
+```
+
+```yaml
+base: meta-llama/Llama-3.1-8B-Instruct
+task: sft
+
+data:
+  train: ./data/train.jsonl
+  format: alpaca
+
+training:
+  epochs: 3
+  lr: 2e-5
+  quantization: 4bit
+  quantization_aware: true  # Enable QAT
+  lora:
+    r: 64
+    alpha: 16
+
+output: ./output
+```
+
+**When to use QAT vs post-training quantization:**
+- **QAT** (`quantization_aware: true`): Better quality when you plan to deploy with aggressive quantization (int8/int4). ~5-10% slower training, but the model learns to compensate for quantization noise.
+- **Post-training quantization** (default): Faster training, good enough for most use cases. Quantize after training with `soup export --quant q4_k_m`.
+
+QAT works with all training tasks (SFT, DPO, GRPO) and vision modality. Not compatible with the unsloth backend. After QAT training, export to GGUF normally with `soup export`.
+
 ## DPO Training
 
 Train with preference data using Direct Preference Optimization:
@@ -641,6 +676,7 @@ soup --verbose <command>                      Full traceback on errors
 | Extra | Install | What it adds |
 |---|---|---|
 | `vision` | `pip install 'soup-cli[vision]'` | Vision/multimodal fine-tuning (Pillow) |
+| `qat` | `pip install 'soup-cli[qat]'` | Quantization-Aware Training (torchao) |
 | `fast` | `pip install 'soup-cli[fast]'` | Unsloth backend (2-5x faster, -80% VRAM) |
 | `serve` | `pip install 'soup-cli[serve]'` | Inference server (FastAPI + uvicorn) |
 | `data` | `pip install 'soup-cli[data]'` | Deduplication (MinHash via datasketch) |

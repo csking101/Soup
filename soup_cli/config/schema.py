@@ -45,6 +45,10 @@ class TrainingConfig(BaseModel):
         default="4bit",
         description="Quantization: 4bit (QLoRA), 8bit, or none (full precision)",
     )
+    quantization_aware: bool = Field(
+        default=False,
+        description="Enable Quantization-Aware Training (QAT) for better post-quantization quality",
+    )
     optimizer: str = Field(default="adamw_torch", description="Optimizer name")
     scheduler: str = Field(default="cosine", description="LR scheduler type")
     save_steps: int = Field(default=100, description="Save checkpoint every N steps")

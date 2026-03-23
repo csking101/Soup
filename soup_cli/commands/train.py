@@ -105,6 +105,10 @@ def train(
     if cfg.backend == "unsloth":
         backend_label = "unsloth [green](fast mode)[/]"
 
+    quant_label = cfg.training.quantization
+    if cfg.training.quantization_aware:
+        quant_label += " + QAT"
+
     console.print(
         Panel(
             f"Device:  [bold]{device_name}[/]\n"
@@ -113,10 +117,22 @@ def train(
             f"Task:    [bold]{cfg.task}[/]\n"
             f"Backend: [bold]{backend_label}[/]\n"
             f"LoRA:    [bold]r={cfg.training.lora.r}, alpha={cfg.training.lora.alpha}[/]\n"
-            f"Quant:   [bold]{cfg.training.quantization}[/]",
+            f"Quant:   [bold]{quant_label}[/]",
             title="Training Setup",
         )
     )
+
+    # Validate QAT configuration
+    if cfg.training.quantization_aware:
+        from soup_cli.utils.qat import validate_qat_config
+
+        qat_errors = validate_qat_config(
+            cfg.training.quantization, cfg.backend, cfg.modality,
+        )
+        for err in qat_errors:
+            console.print(f"[red]QAT error:[/] {err}")
+        if qat_errors:
+            raise typer.Exit(1)
 
     # Suggest unsloth if available but not being used
     if cfg.backend == "transformers":

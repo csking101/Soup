@@ -33,6 +33,7 @@ DEPS = [
     ("httpx", "httpx", "0.24.0", False),
     ("unsloth", "unsloth", "2024.8", False),
     ("PIL", "Pillow", "9.0.0", False),
+    ("torchao", "torchao", "0.4.0", False),
 ]
 
 
