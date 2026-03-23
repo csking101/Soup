@@ -1,35 +1,74 @@
 <svg width="100%" viewBox="0 0 680 260" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <style>
+      @keyframes fadeIn {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
+      @keyframes slideInLeft {
+        from { opacity: 0; transform: translateX(-20px); }
+        to { opacity: 1; transform: translateX(0); }
+      }
+      @keyframes typewriter {
+        from { width: 0; }
+        to { width: 100%; }
+      }
+      @keyframes blink {
+        0%, 49% { opacity: 1; }
+        50%, 100% { opacity: 0; }
+      }
+      .logo { animation: fadeIn 0.8s ease-out; }
+      .title { animation: slideInLeft 1s ease-out 0.3s both; }
+      .subtitle { animation: slideInLeft 1.2s ease-out 0.5s both; }
+      .terminal { animation: fadeIn 1.4s ease-out 0.7s both; }
+      .line1 { animation: fadeIn 1.8s ease-out 1s both; }
+      .line2 { animation: fadeIn 2.2s ease-out 1.4s both; }
+      .line3 { animation: fadeIn 2.6s ease-out 1.8s both; }
+      .cursor { animation: blink 1s steps(2, start) 2.6s infinite; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect width="680" height="260" fill="white"/>
 
   <!-- Left: PNG logo -->
-  <image xlink:href="https://raw.githubusercontent.com/MakazhanAlpamys/Soup/main/soup.png" x="10" y="10" width="180" height="220" preserveAspectRatio="xMidYMid meet"/>
+  <image class="logo" xlink:href="https://raw.githubusercontent.com/MakazhanAlpamys/Soup/main/soup.png" x="10" y="10" width="180" height="220" preserveAspectRatio="xMidYMid meet"/>
 
   <!-- Right: Text content -->
-  <g>
+  <g class="title">
     <text x="230" y="75" font-family="&quot;Anthropic Sans&quot;, sans-serif" font-size="48" font-weight="500" fill="rgb(20, 20, 19)" letter-spacing="-1">Soup</text>
   </g>
 
-  <g>
+  <g class="subtitle">
     <text x="230" y="105" font-family="&quot;Anthropic Sans&quot;, sans-serif" font-size="14" font-weight="400" fill="rgb(61, 61, 58)">Fine-tune LLMs in one command. No SSH, no config hell.</text>
   </g>
 
   <!-- Terminal block -->
-  <rect x="230" y="122" width="420" height="120" rx="8" fill="rgb(20, 20, 19)" opacity="0.06" stroke="rgba(31, 30, 29, 0.15)" stroke-width="0.8"/>
+  <g class="terminal">
+    <rect x="230" y="122" width="420" height="120" rx="8" fill="rgb(20, 20, 19)" opacity="0.06" stroke="rgba(31, 30, 29, 0.15)" stroke-width="0.8"/>
 
-  <!-- Terminal dots -->
-  <circle cx="248" cy="137" r="3" fill="#E24B4A" opacity="0.9"/>
-  <circle cx="261" cy="137" r="3" fill="#EF9F27" opacity="0.76"/>
-  <circle cx="274" cy="137" r="3" fill="#639922" opacity="0.7"/>
+    <!-- Terminal dots -->
+    <circle cx="248" cy="137" r="3" fill="#E24B4A" opacity="0.9"/>
+    <circle cx="261" cy="137" r="3" fill="#EF9F27" opacity="0.76"/>
+    <circle cx="274" cy="137" r="3" fill="#639922" opacity="0.7"/>
+  </g>
 
-  <!-- Terminal prompt lines -->
-  <text x="246" y="163" font-family="ui-monospace, monospace" font-size="13" fill="#639922">$</text>
-  <text x="260" y="163" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">pip install soup-cli</text>
+  <!-- Terminal prompt lines with animation -->
+  <g class="line1">
+    <text x="246" y="163" font-family="ui-monospace, monospace" font-size="13" fill="#639922">$</text>
+    <text x="260" y="163" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">pip install soup-cli</text>
+  </g>
 
-  <text x="246" y="185" font-family="ui-monospace, monospace" font-size="13" fill="#639922">$</text>
-  <text x="260" y="185" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">soup init --template chat</text>
+  <g class="line2">
+    <text x="246" y="185" font-family="ui-monospace, monospace" font-size="13" fill="#639922">$</text>
+    <text x="260" y="185" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">soup init --template chat</text>
+  </g>
 
-  <text x="246" y="207" font-family="ui-monospace, monospace" font-size="13" fill="#639922">$</text>
-  <text x="260" y="207" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">soup train</text>
-  <text x="344" y="207" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">▌</text>
+  <g class="line3">
+    <text x="246" y="207" font-family="ui-monospace, monospace" font-size="13" fill="#639922">$</text>
+    <text x="260" y="207" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">soup train</text>
+    <text class="cursor" x="344" y="207" font-family="ui-monospace, monospace" font-size="13" fill="rgb(20, 20, 19)">▌</text>
+  </g>
 
   <!-- Divider line -->
   <line x1="205" y1="40" x2="205" y2="250" stroke="rgba(31, 30, 29, 0.15)" stroke-width="0.8" opacity="0.6"/>
