@@ -75,8 +75,8 @@ ERROR_MAP = [
     # CPU / quantization issues
     (
         "expanded size of the tensor",
-        "Model generation failed (likely 4bit quantization on CPU).",
-        "Use a GPU, or set quantization: none in your config for CPU training.",
+        "Model generation failed (empty tensors, likely GRPO/PPO on CPU).",
+        "GRPO requires a CUDA GPU. For CPU training, use SFT or DPO instead.",
     ),
     (
         "expected m1 and m2 to have the same dtype",

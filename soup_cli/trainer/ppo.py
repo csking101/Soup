@@ -155,12 +155,29 @@ class PPOTrainerWrapper:
             reward_funcs.append(self.reward_fn)
 
         # --- Trainer ---
-        self.trainer = PPOTrainer(
-            config=ppo_config,
-            model=self.model,
-            tokenizer=self.tokenizer,
-            dataset=train_ds,
-        )
+        # trl >=0.28 (OnlineDPOTrainer base) uses args= instead of config=
+        ppo_trainer_params = inspect.signature(PPOTrainer.__init__).parameters
+        trainer_kwargs = {
+            "model": self.model,
+        }
+
+        if "args" in ppo_trainer_params:
+            # trl >=0.28: PPOTrainer(args=, model=, processing_class=, ...)
+            trainer_kwargs["args"] = ppo_config
+            trainer_kwargs["processing_class"] = self.tokenizer
+            if "train_dataset" in ppo_trainer_params:
+                trainer_kwargs["train_dataset"] = train_ds
+            else:
+                trainer_kwargs["dataset"] = train_ds
+            if reward_funcs and "reward_funcs" in ppo_trainer_params:
+                trainer_kwargs["reward_funcs"] = reward_funcs
+        else:
+            # trl <0.28: PPOTrainer(config=, model=, tokenizer=, dataset=)
+            trainer_kwargs["config"] = ppo_config
+            trainer_kwargs["tokenizer"] = self.tokenizer
+            trainer_kwargs["dataset"] = train_ds
+
+        self.trainer = PPOTrainer(**trainer_kwargs)
 
         self._output_dir = str(output_dir)
         self._train_ds = train_ds
@@ -271,13 +288,56 @@ class PPOTrainerWrapper:
     ) -> dict:
         """Run PPO training loop and return results summary.
 
-        PPO training is a manual loop:
-          1. Sample prompts from dataset
-          2. Generate completions with the policy model
-          3. Score completions with reward model/function
-          4. Run PPO optimization step
-          5. Repeat for all batches × epochs
+        Supports two trl APIs:
+          - trl >=0.28: uses built-in trainer.train() (OnlineDPOTrainer style)
+          - trl <0.28: manual loop with generate() + step()
         """
+        # Detect API: trl >=0.28 PPOTrainer has a .train() from OnlineDPOTrainer
+        has_builtin_train = hasattr(self.trainer, "train") and not hasattr(
+            self.trainer, "step"
+        )
+
+        if has_builtin_train:
+            return self._train_builtin(display, tracker, run_id, resume_from_checkpoint)
+        return self._train_manual(display, tracker, run_id)
+
+    def _train_builtin(self, display, tracker, run_id, resume_from_checkpoint):
+        """Train using trl >=0.28 built-in trainer.train() method."""
+        start = time.time()
+
+        if display:
+            from soup_cli.monitoring.callback import SoupTrainerCallback
+
+            self.trainer.add_callback(
+                SoupTrainerCallback(display, tracker=tracker, run_id=run_id)
+            )
+
+        self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        duration = time.time() - start
+
+        # Save final model (LoRA adapter)
+        self.trainer.save_model(self._output_dir)
+        self.tokenizer.save_pretrained(self._output_dir)
+
+        # Extract metrics
+        logs = self.trainer.state.log_history
+        train_losses = [entry["loss"] for entry in logs if "loss" in entry]
+
+        hours = int(duration // 3600)
+        minutes = int((duration % 3600) // 60)
+        duration_str = f"{hours}h {minutes}m" if hours > 0 else f"{minutes}m"
+
+        return {
+            "initial_loss": train_losses[0] if train_losses else 0,
+            "final_loss": train_losses[-1] if train_losses else 0,
+            "duration": duration_str,
+            "duration_secs": duration,
+            "output_dir": self._output_dir,
+            "total_steps": self.trainer.state.global_step,
+        }
+
+    def _train_manual(self, display, tracker, run_id):
+        """Train using trl <0.28 manual loop: generate() + step()."""
         import torch
 
         start = time.time()

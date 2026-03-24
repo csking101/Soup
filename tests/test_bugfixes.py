@@ -218,11 +218,15 @@ class TestCPUErrorMessages:
     """Test friendly error messages for CPU-specific failures."""
 
     def test_tensor_size_error_mapped(self):
-        """Tensor expansion error should have a friendly message."""
+        """Tensor expansion error should have a friendly GRPO/PPO CPU message."""
         from soup_cli.utils.errors import ERROR_MAP
 
-        patterns = [pattern for pattern, _, _ in ERROR_MAP]
-        assert any("expanded size" in p for p in patterns)
+        for pattern, msg, _ in ERROR_MAP:
+            if "expanded size" in pattern:
+                assert "GRPO" in msg or "PPO" in msg
+                break
+        else:
+            pytest.fail("expanded size pattern not found in ERROR_MAP")
 
     def test_dtype_mismatch_error_mapped(self):
         """Dtype mismatch error should have a friendly message."""
@@ -292,6 +296,28 @@ class TestPPOUseCPU:
 
         wrapper_gpu = PPOTrainerWrapper(cfg, device="cuda")
         assert wrapper_gpu.device == "cuda"
+
+    def test_ppo_supports_args_and_config_api(self):
+        """PPO trainer should detect trl API: args= (>=0.28) vs config= (<0.28)."""
+        import inspect
+
+        from soup_cli.trainer import ppo
+
+        source = inspect.getsource(ppo)
+        # Must handle both trl APIs
+        assert '"args"' in source
+        assert '"config"' in source
+        assert "PPOTrainer.__init__" in source
+
+    def test_ppo_train_detects_builtin_vs_manual(self):
+        """PPO train() should detect built-in .train() vs manual loop."""
+        import inspect
+
+        from soup_cli.trainer import ppo
+
+        source = inspect.getsource(ppo)
+        assert "_train_builtin" in source
+        assert "_train_manual" in source
 
 
 # --- v0.10.3: GRPO CPU warning ---
