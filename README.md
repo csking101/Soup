@@ -89,7 +89,7 @@ soup chat --model ./output
 ### 5. Push to HuggingFace
 
 ```bash
-soup push --model ./output --repo MakazhanAlpamys/my-model
+soup push --model ./output --repo your-username/my-model
 ```
 
 ### 6. Merge & Export
@@ -382,10 +382,10 @@ soup chat --model ./output --temperature 0.3 --max-tokens 256
 
 ```bash
 # Upload model to HF Hub
-soup push --model ./output --repo MakazhanAlpamys/my-model
+soup push --model ./output --repo your-username/my-model
 
 # Make it private
-soup push --model ./output --repo MakazhanAlpamys/my-model --private
+soup push --model ./output --repo your-username/my-model --private
 ```
 
 ## Merge LoRA Adapter
