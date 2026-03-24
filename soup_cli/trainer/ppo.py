@@ -53,7 +53,9 @@ class PPOTrainerWrapper:
     def setup(self, dataset: dict):
         """Load model, tokenizer, reward model/fn, apply LoRA, create PPO trainer."""
         from datasets import Dataset
-        from trl import PPOConfig, PPOTrainer
+
+        # Import PPOTrainer/PPOConfig — trl >=0.28 moved to trl.experimental
+        ppo_trainer_cls, ppo_config_cls, is_experimental = _import_ppo_classes()
 
         # Enable Rich progress bar for HuggingFace downloads
         from soup_cli.trainer.sft import _enable_hf_transfer_progress
@@ -109,6 +111,8 @@ class PPOTrainerWrapper:
 
         # --- PPO config ---
         # Build kwargs, handling trl version differences
+        import inspect
+
         ppo_kwargs = {
             "output_dir": str(output_dir),
             "per_device_train_batch_size": batch_size,
@@ -116,10 +120,9 @@ class PPOTrainerWrapper:
             "learning_rate": tcfg.lr,
         }
 
-        # trl renamed ppo_epochs -> num_ppo_epochs in newer versions
-        import inspect
+        ppo_params = inspect.signature(ppo_config_cls).parameters
 
-        ppo_params = inspect.signature(PPOConfig).parameters
+        # trl renamed ppo_epochs -> num_ppo_epochs in newer versions
         if "num_ppo_epochs" in ppo_params:
             ppo_kwargs["num_ppo_epochs"] = tcfg.ppo_epochs
         elif "ppo_epochs" in ppo_params:
@@ -145,7 +148,7 @@ class PPOTrainerWrapper:
         if self.device == "cpu" and "use_cpu" in ppo_params:
             ppo_kwargs["use_cpu"] = True
 
-        ppo_config = PPOConfig(**ppo_kwargs)
+        ppo_config = ppo_config_cls(**ppo_kwargs)
 
         # --- Build reward functions list for PPOTrainer ---
         reward_funcs = []
@@ -155,41 +158,119 @@ class PPOTrainerWrapper:
             reward_funcs.append(self.reward_fn)
 
         # --- Trainer ---
-        # trl >=0.28 (OnlineDPOTrainer base) uses args= instead of config=
-        ppo_trainer_params = inspect.signature(PPOTrainer.__init__).parameters
-        trainer_kwargs = {
-            "model": self.model,
-        }
+        ppo_trainer_params = inspect.signature(ppo_trainer_cls.__init__).parameters
 
-        if "args" in ppo_trainer_params:
-            # trl >=0.28: PPOTrainer(args=, model=, processing_class=, ...)
-            trainer_kwargs["args"] = ppo_config
-            trainer_kwargs["processing_class"] = self.tokenizer
+        if is_experimental:
+            # trl >=0.28 experimental API: PPOTrainer(args, processing_class,
+            #   model, ref_model, reward_model, train_dataset, value_model, ...)
+            # ref_model=None is fine (auto-creates from policy model).
+            # reward_model and value_model are required nn.Modules.
+            reward_model_obj = self._get_or_create_reward_model(cfg, tcfg)
+            value_model_obj = self._create_value_model(cfg, tcfg)
+
+            trainer_kwargs = {
+                "args": ppo_config,
+                "processing_class": self.tokenizer,
+                "model": self.model,
+                "ref_model": None,
+                "reward_model": reward_model_obj,
+                "train_dataset": train_ds,
+                "value_model": value_model_obj,
+            }
+            self._dataset_in_constructor = True
+            self.trainer = ppo_trainer_cls(**trainer_kwargs)
+
+        elif "args" in ppo_trainer_params:
+            # trl >=0.28 non-experimental (transitional API)
+            trainer_kwargs = {
+                "model": self.model,
+                "args": ppo_config,
+                "processing_class": self.tokenizer,
+            }
             if "train_dataset" in ppo_trainer_params:
                 trainer_kwargs["train_dataset"] = train_ds
             elif "dataset" in ppo_trainer_params:
                 trainer_kwargs["dataset"] = train_ds
-            # else: dataset not accepted by constructor — store for .train()
             if reward_funcs and "reward_funcs" in ppo_trainer_params:
                 trainer_kwargs["reward_funcs"] = reward_funcs
+            # Pass ref/reward/value models if required positionally
+            if "ref_model" in ppo_trainer_params:
+                trainer_kwargs["ref_model"] = None
+            if "reward_model" in ppo_trainer_params:
+                trainer_kwargs["reward_model"] = self._get_or_create_reward_model(
+                    cfg, tcfg
+                )
+            if "value_model" in ppo_trainer_params:
+                trainer_kwargs["value_model"] = self._create_value_model(cfg, tcfg)
+            self._dataset_in_constructor = (
+                "train_dataset" in trainer_kwargs or "dataset" in trainer_kwargs
+            )
+            self.trainer = ppo_trainer_cls(**trainer_kwargs)
+
         else:
             # trl <0.28: PPOTrainer(config=, model=, tokenizer=, dataset=)
-            trainer_kwargs["config"] = ppo_config
-            trainer_kwargs["tokenizer"] = self.tokenizer
-            trainer_kwargs["dataset"] = train_ds
-
-        # Track whether dataset was passed to constructor
-        self._dataset_in_constructor = (
-            "train_dataset" in trainer_kwargs or "dataset" in trainer_kwargs
-        )
-
-        self.trainer = PPOTrainer(**trainer_kwargs)
+            trainer_kwargs = {
+                "model": self.model,
+                "config": ppo_config,
+                "tokenizer": self.tokenizer,
+                "dataset": train_ds,
+            }
+            self._dataset_in_constructor = True
+            self.trainer = ppo_trainer_cls(**trainer_kwargs)
 
         self._output_dir = str(output_dir)
         self._train_ds = train_ds
         self._batch_size = batch_size
         self._num_epochs = tcfg.epochs
         self._max_length = cfg.data.max_length
+
+    def _get_or_create_reward_model(self, cfg, tcfg):
+        """Get existing reward model or create one for trl experimental PPO API.
+
+        The experimental PPOTrainer requires an nn.Module reward model (not a callable).
+        If we have a loaded reward model instance, use it. Otherwise, load one from
+        the configured reward_model path, or create a fresh AutoModelForSequenceClassification
+        from the base model.
+        """
+        if self.reward_model_instance is not None:
+            return self.reward_model_instance
+
+        # If a reward_model path is configured, load it
+        if tcfg.reward_model:
+            return _load_reward_model(tcfg.reward_model, self.device)
+
+        # Fallback: create a sequence classification model from the base model
+        from transformers import AutoModelForSequenceClassification
+
+        console.print(
+            "[yellow]No reward_model path specified. Creating reward model "
+            f"from base model: {cfg.base}[/]"
+        )
+        reward_model = AutoModelForSequenceClassification.from_pretrained(
+            cfg.base,
+            trust_remote_code=True,
+            num_labels=1,
+            device_map="auto" if self.device != "cpu" else None,
+        )
+        reward_model.eval()
+        return reward_model
+
+    def _create_value_model(self, cfg, tcfg):
+        """Create a value model for trl experimental PPO API.
+
+        The value model estimates state values for GAE advantage estimation.
+        We create an AutoModelForSequenceClassification from the base model.
+        """
+        from transformers import AutoModelForSequenceClassification
+
+        console.print(f"[dim]Creating value model from: {cfg.base}[/]")
+        value_model = AutoModelForSequenceClassification.from_pretrained(
+            cfg.base,
+            trust_remote_code=True,
+            num_labels=1,
+            device_map="auto" if self.device != "cpu" else None,
+        )
+        return value_model
 
     def _setup_reward(self, cfg, tcfg):
         """Load reward model and/or reward function."""
@@ -481,6 +562,27 @@ class PPOTrainerWrapper:
             rewards = [torch.tensor(0.0) for _ in range(num_samples)]
 
         return rewards
+
+
+def _import_ppo_classes():
+    """Import PPOTrainer and PPOConfig, handling trl version differences.
+
+    trl >=0.28 moved PPOTrainer to trl.experimental with a new API that requires
+    ref_model, reward_model, train_dataset, and value_model as positional args.
+    The old trl import still works in 0.28 (deprecated) but is removed in 0.29.
+
+    Returns:
+        (PPOTrainer, PPOConfig, is_experimental): tuple with the classes and a flag
+        indicating whether the experimental API (with required positional args) is used.
+    """
+    try:
+        from trl.experimental.ppo import PPOConfig, PPOTrainer
+        return PPOTrainer, PPOConfig, True
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    from trl import PPOConfig, PPOTrainer
+    return PPOTrainer, PPOConfig, False
 
 
 def _load_reward_model(model_path: str, device: str = "cuda"):

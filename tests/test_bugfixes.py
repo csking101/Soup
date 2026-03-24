@@ -1,4 +1,4 @@
-"""Tests for v0.10.1-v0.10.5 bug fixes - Unicode, PPO, dtype, CPU, trl API compat."""
+"""Tests for v0.10.1-v0.10.6 bug fixes - Unicode, PPO, dtype, CPU, trl API compat."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -307,7 +307,7 @@ class TestPPOUseCPU:
         # Must handle both trl APIs
         assert '"args"' in source
         assert '"config"' in source
-        assert "PPOTrainer.__init__" in source
+        assert "ppo_trainer_cls.__init__" in source
 
     def test_ppo_train_detects_builtin_vs_manual(self):
         """PPO train() should detect built-in .train() vs manual loop."""
@@ -434,22 +434,20 @@ class TestPPODatasetCompat:
         with mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_reward"), \
              mock_patch(
                  "soup_cli.trainer.ppo.PPOTrainerWrapper._setup_transformers"
+             ), mock_patch(
+                 "soup_cli.trainer.ppo._import_ppo_classes",
+                 return_value=(FakePPOTrainer, FakePPOConfig, False),
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
             wrapper.tokenizer = MagicMock()
             wrapper.tokenizer.pad_token = "pad"
 
-            with mock_patch(
-                "trl.PPOTrainer", FakePPOTrainer, create=True,
-            ), mock_patch(
-                "trl.PPOConfig", FakePPOConfig, create=True,
-            ):
-                wrapper.setup(dataset)
+            wrapper.setup(dataset)
 
-            # dataset should NOT be in constructor since FakePPOTrainer
-            # doesn't accept it
-            assert wrapper._dataset_in_constructor is False
+        # dataset should NOT be in constructor since FakePPOTrainer
+        # doesn't accept it (uses "args" path but no train_dataset param)
+        assert wrapper._dataset_in_constructor is False
 
     def test_ppo_dataset_in_constructor_when_accepted(self):
         """_dataset_in_constructor should be True when train_dataset is accepted."""
@@ -485,17 +483,251 @@ class TestPPODatasetCompat:
         with mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_reward"), \
              mock_patch(
                  "soup_cli.trainer.ppo.PPOTrainerWrapper._setup_transformers"
+             ), mock_patch(
+                 "soup_cli.trainer.ppo._import_ppo_classes",
+                 return_value=(FakePPOTrainer, FakePPOConfig, False),
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
             wrapper.tokenizer = MagicMock()
             wrapper.tokenizer.pad_token = "pad"
 
-            with mock_patch(
-                "trl.PPOTrainer", FakePPOTrainer, create=True,
-            ), mock_patch(
-                "trl.PPOConfig", FakePPOConfig, create=True,
-            ):
-                wrapper.setup(dataset)
+            wrapper.setup(dataset)
 
-            assert wrapper._dataset_in_constructor is True
+        assert wrapper._dataset_in_constructor is True
+
+
+# --- BUG-007: PPO trl >=0.28 experimental API missing positional args (v0.10.6) ---
+
+
+class TestPPOExperimentalImport:
+    """Test _import_ppo_classes handles both trl paths."""
+
+    def test_import_ppo_classes_returns_tuple(self):
+        """_import_ppo_classes should return (PPOTrainer, PPOConfig, bool)."""
+        from soup_cli.trainer.ppo import _import_ppo_classes
+
+        result = _import_ppo_classes()
+        assert isinstance(result, tuple)
+        assert len(result) == 3
+        trainer_cls, config_cls, is_exp = result
+        assert trainer_cls is not None
+        assert config_cls is not None
+        assert isinstance(is_exp, bool)
+
+    def test_import_experimental_fallback(self):
+        """When trl.experimental is unavailable, should fall back to trl."""
+        import soup_cli.trainer.ppo as ppo_mod
+
+        # Just verify the function works without error (it handles
+        # ImportError from trl.experimental internally)
+        result = ppo_mod._import_ppo_classes()
+        assert len(result) == 3
+
+
+class TestPPOExperimentalSetup:
+    """Test PPO setup handles experimental API with required positional args."""
+
+    def test_experimental_api_passes_required_args(self):
+        """When is_experimental=True, setup should pass ref_model, reward_model,
+        train_dataset, and value_model to PPOTrainer."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as mock_patch
+
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="ppo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = PPOTrainerWrapper(cfg, device="cpu")
+
+        dataset = {"train": [{"prompt": "What is 2+2?", "answer": "4"}]}
+
+        # Track what args PPOTrainer receives
+        captured_kwargs = {}
+
+        class FakePPOTrainer:
+            def __init__(self, **kwargs):
+                captured_kwargs.update(kwargs)
+
+        class FakePPOConfig:
+            def __init__(self, **kwargs):
+                pass
+
+        fake_reward_model = MagicMock()
+        fake_value_model = MagicMock()
+
+        with mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_reward"), \
+             mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_transformers"), \
+             mock_patch(
+                 "soup_cli.trainer.ppo._import_ppo_classes",
+                 return_value=(FakePPOTrainer, FakePPOConfig, True),
+             ), \
+             mock_patch(
+                 "soup_cli.trainer.ppo.PPOTrainerWrapper._get_or_create_reward_model",
+                 return_value=fake_reward_model,
+             ), \
+             mock_patch(
+                 "soup_cli.trainer.ppo.PPOTrainerWrapper._create_value_model",
+                 return_value=fake_value_model,
+             ):
+            wrapper.model = MagicMock()
+            wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
+            wrapper.tokenizer = MagicMock()
+            wrapper.tokenizer.pad_token = "pad"
+
+            wrapper.setup(dataset)
+
+        # Verify required positional args were passed
+        assert "ref_model" in captured_kwargs
+        assert captured_kwargs["ref_model"] is None  # auto-create
+        assert "reward_model" in captured_kwargs
+        assert captured_kwargs["reward_model"] is fake_reward_model
+        assert "train_dataset" in captured_kwargs
+        assert "value_model" in captured_kwargs
+        assert captured_kwargs["value_model"] is fake_value_model
+        assert "args" in captured_kwargs
+        assert "processing_class" in captured_kwargs
+        assert wrapper._dataset_in_constructor is True
+
+    def test_legacy_api_no_positional_args(self):
+        """When is_experimental=False and no args param, should use old API."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as mock_patch
+
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="ppo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = PPOTrainerWrapper(cfg, device="cpu")
+
+        dataset = {"train": [{"prompt": "What is 2+2?", "answer": "4"}]}
+
+        captured_kwargs = {}
+
+        class FakePPOTrainer:
+            def __init__(self, **kwargs):
+                captured_kwargs.update(kwargs)
+
+        class FakePPOConfig:
+            def __init__(self, **kwargs):
+                pass
+
+        with mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_reward"), \
+             mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_transformers"), \
+             mock_patch(
+                 "soup_cli.trainer.ppo._import_ppo_classes",
+                 return_value=(FakePPOTrainer, FakePPOConfig, False),
+             ):
+            wrapper.model = MagicMock()
+            wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
+            wrapper.tokenizer = MagicMock()
+            wrapper.tokenizer.pad_token = "pad"
+
+            wrapper.setup(dataset)
+
+        # Old API uses config= and tokenizer=
+        assert "config" in captured_kwargs
+        assert "tokenizer" in captured_kwargs
+        assert "dataset" in captured_kwargs
+        assert "ref_model" not in captured_kwargs
+        assert "value_model" not in captured_kwargs
+
+
+# --- BUG-008: GRPO CPU empty generation tensor mismatch (v0.10.6) ---
+
+
+class TestGRPOCPUMinNewTokens:
+    """Test GRPO CPU workaround: generation_kwargs with min_new_tokens."""
+
+    def test_cpu_adds_generation_kwargs(self):
+        """On CPU, GRPO setup should add generation_kwargs with min_new_tokens."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as mock_patch
+
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="grpo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = GRPOTrainerWrapper(cfg, device="cpu")
+
+        dataset = {"train": [{"prompt": "What is 2+2?", "answer": "4"}]}
+
+        captured_config_kwargs = {}
+
+        class FakeGRPOConfig:
+            def __init__(self, use_cpu=None, generation_kwargs=None, **kwargs):
+                captured_config_kwargs.update(kwargs)
+                if use_cpu is not None:
+                    captured_config_kwargs["use_cpu"] = use_cpu
+                if generation_kwargs is not None:
+                    captured_config_kwargs["generation_kwargs"] = generation_kwargs
+
+        class FakeGRPOTrainer:
+            def __init__(self, **kwargs):
+                pass
+
+        with mock_patch("soup_cli.trainer.grpo.GRPOTrainerWrapper._setup_transformers"), \
+             mock_patch("trl.GRPOConfig", FakeGRPOConfig), \
+             mock_patch("trl.GRPOTrainer", FakeGRPOTrainer):
+            wrapper.model = MagicMock()
+            wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
+            wrapper.tokenizer = MagicMock()
+            wrapper.tokenizer.pad_token = "pad"
+
+            wrapper.setup(dataset)
+
+        # Should have generation_kwargs with min_new_tokens on CPU
+        gen_kwargs = captured_config_kwargs.get("generation_kwargs", {})
+        assert gen_kwargs.get("min_new_tokens") == 1
+
+    def test_gpu_no_generation_kwargs(self):
+        """On GPU, GRPO setup should NOT add generation_kwargs for min_new_tokens."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as mock_patch
+
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="grpo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = GRPOTrainerWrapper(cfg, device="cuda")
+
+        dataset = {"train": [{"prompt": "What is 2+2?", "answer": "4"}]}
+
+        captured_config_kwargs = {}
+
+        class FakeGRPOConfig:
+            def __init__(self, use_cpu=None, generation_kwargs=None, **kwargs):
+                captured_config_kwargs.update(kwargs)
+                if use_cpu is not None:
+                    captured_config_kwargs["use_cpu"] = use_cpu
+                if generation_kwargs is not None:
+                    captured_config_kwargs["generation_kwargs"] = generation_kwargs
+
+        class FakeGRPOTrainer:
+            def __init__(self, **kwargs):
+                pass
+
+        with mock_patch("soup_cli.trainer.grpo.GRPOTrainerWrapper._setup_transformers"), \
+             mock_patch("trl.GRPOConfig", FakeGRPOConfig), \
+             mock_patch("trl.GRPOTrainer", FakeGRPOTrainer):
+            wrapper.model = MagicMock()
+            wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
+            wrapper.tokenizer = MagicMock()
+            wrapper.tokenizer.pad_token = "pad"
+
+            wrapper.setup(dataset)
+
+        # Should NOT have generation_kwargs on GPU
+        assert "generation_kwargs" not in captured_config_kwargs

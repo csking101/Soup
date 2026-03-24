@@ -143,13 +143,18 @@ class GRPOTrainerWrapper:
             "max_completion_length": cfg.data.max_length,
         }
 
-        # CPU support: set use_cpu if supported by trl version
+        # CPU support: set use_cpu and prevent empty generations
         if self.device == "cpu":
             import inspect as _inspect
 
             grpo_params = _inspect.signature(GRPOConfig).parameters
             if "use_cpu" in grpo_params:
                 grpo_kwargs["use_cpu"] = True
+            # Workaround for trl GRPO CPU bug: model.generate() can produce
+            # zero new tokens on CPU, causing tensor size mismatch errors.
+            # Setting min_new_tokens=1 ensures at least one token is generated.
+            if "generation_kwargs" in grpo_params:
+                grpo_kwargs["generation_kwargs"] = {"min_new_tokens": 1}
 
         grpo_config = GRPOConfig(**grpo_kwargs)
 
