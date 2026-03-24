@@ -107,12 +107,13 @@ def train(
     device, device_name = detect_device()
     gpu_info = get_gpu_info()
 
-    # Warn about quantization on CPU
+    # Auto-disable quantization on CPU (bitsandbytes doesn't support CPU)
     if device == "cpu" and cfg.training.quantization in ("4bit", "8bit"):
         console.print(
-            f"[yellow]Warning: {cfg.training.quantization} quantization on CPU "
-            "may cause errors. Consider using quantization: none for CPU.[/]"
+            f"[yellow]Warning: {cfg.training.quantization} quantization is not "
+            "supported on CPU. Switching to quantization: none.[/]"
         )
+        cfg.training.quantization = "none"
 
     backend_label = cfg.backend
     if cfg.backend == "unsloth":

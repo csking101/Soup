@@ -2,7 +2,7 @@
 
 **Repo:** https://github.com/MakazhanAlpamys/Soup
 **PyPI:** https://pypi.org/project/soup-cli/ (`pip install soup-cli`)
-**Version:** v0.10.1 | 624 tests | CI green
+**Version:** v0.10.2 | 631 tests | CI green
 
 ### How to publish
 
@@ -16,7 +16,7 @@ git push --tags
 
 ---
 
-## Completed (v0.1.0 – v0.10.1)
+## Completed (v0.0.1 – v0.10.2)
 
 - **CLI:** init, train, chat, push, merge, export, eval, serve, sweep, diff, doctor, quickstart, ui, version
 - **Data:** inspect, validate, convert, merge, dedup, stats, generate
@@ -30,100 +30,74 @@ git push --tags
 - **Community:** CONTRIBUTING.md, CODE_OF_CONDUCT.md, SECURITY.md, examples/, FUNDING.yml
 - **Tests:** 624 tests, 41 files, ruff lint, CI on Python 3.9/3.11/3.12
 - **v0.10.1 bugfixes:** Windows UnicodeEncodeError, PPO trl compat, compute dtype for CPU, diff torch_dtype, wandb version pin
+- **v0.10.2 bugfixes:** ASCII progress bar, plotext fallback, auto-disable 4bit on CPU, friendly CPU error messages, torchvision compat check in doctor
 
 ---
 
 ## Roadmap
 
-### P0 — Critical (v1.0–v1.1)
+### v0.11.0 — Alignment methods
 
-#### Community & Marketing
-- [ ] Discord server
-- [ ] First Reddit post (r/LocalLLaMA, r/MachineLearning)
-- [ ] HuggingFace models showcase ("trained-with-soup" tag)
-- [ ] 3-5 YouTube tutorials / blog posts with benchmarks (Soup vs LLaMA-Factory vs Axolotl)
-- [ ] Supported models page in README (Llama 4, Gemma 3, Qwen 2.5/3, Phi-4, DeepSeek R1/V3, Mistral, Mixtral)
+- [ ] KTO (`task: kto`) — unpaired preference data, wraps trl.KTOTrainer
+- [ ] ORPO (`task: orpo`) — no reference model needed, wraps trl.ORPOTrainer
+- [ ] SimPO (`task: simpo`) — simple preference optimization
+- [ ] IPO (`task: ipo`) — identity preference optimization
+- [ ] Templates: `soup init --template kto`, `--template orpo`
 
-#### Advanced PEFT methods
-- [ ] DoRA (`peft_type: dora`) — improved LoRA with magnitude decomposition
+### v0.12.0 — Advanced PEFT
+
+- [ ] DoRA (`use_dora: true`) — magnitude decomposition, already in PEFT
+- [ ] LoRA+ (`loraplus_lr_ratio`) — different lr for A and B matrices
 - [ ] GaLore — memory-efficient full-parameter training on consumer GPUs
-- [ ] LoRA+ — different learning rates for A and B matrices
 
-#### More alignment methods
-- [ ] KTO (Kahneman-Tversky Optimization) — `task: kto`, doesn't need paired data
-- [ ] ORPO (Odds Ratio Preference Optimization) — `task: orpo`, no reference model needed
-- [ ] SimPO — `task: simpo`, simple preference optimization
-- [ ] IPO (Identity Preference Optimization) — `task: ipo`
+### v0.13.0 — Batch inference + TensorBoard
 
-#### Pre-training / Continued pre-training
+- [ ] `soup infer --input prompts.jsonl --output results.jsonl` — batch inference (reuse diff.py code)
+- [ ] `--tensorboard` flag in train — `report_to="tensorboard"`, HF Trainer handles it
+- [ ] Supported models page in README (Llama 4, Gemma 3, Qwen 2.5/3, Phi-4, DeepSeek R1/V3)
+
+### v0.14.0 — Pre-training + MoE
+
 - [ ] `task: pretrain` — continued pre-training on raw text
-- [ ] Support for plain text / tokenized datasets
+- [ ] Plain text / tokenized datasets support
+- [ ] MoE model support (Qwen3 30B-A3B, Mixtral, DeepSeek V3)
+- [ ] ScatterMoE LoRA
 
-#### Cloud GPU providers
-- [ ] `soup cloud run --provider runpod --gpu a100 --config soup.yaml`
-- [ ] RunPod, Vast.ai, Lambda Labs, Modal integration
-- [ ] Auto-setup: upload data → rent GPU → train → return adapter → teardown
-- [ ] Cost estimator and budget auto-stop
+### v0.15.0 — Performance + Long-context
 
----
-
-### P1 — Important (v1.2–v1.3)
-
-#### MoE support
-- [ ] Explicit MoE model support (Qwen3 30B-A3B, Mixtral, DeepSeek V3)
-- [ ] ScatterMoE LoRA for efficient MoE fine-tuning
-- [ ] Documentation and examples for MoE training
-
-#### Long-context training
-- [ ] Sequence parallelism via Ring FlashAttention
-- [ ] 128k+ context fine-tuning across multiple GPUs
-- [ ] Neat packing (contamination-free) for long sequences
-
-#### Embedding models
-- [ ] `task: embedding` — fine-tune sentence transformers, BGE, E5
-- [ ] `soup init --template embedding`
-- [ ] Contrastive loss, triplet loss support
-
-#### Advanced distributed training
-- [ ] FSDP2 support alongside DeepSpeed
-- [ ] Multi-node training via torchrun / Ray
-- [ ] Tensor Parallelism + Context Parallelism combined
-
-#### Performance optimizations
 - [ ] Liger Kernel integration (fused operations)
 - [ ] FlashAttention-3/4 auto-detection
-- [ ] SageAttention support
+- [ ] FSDP2 support alongside DeepSpeed
+- [ ] Sequence parallelism via Ring FlashAttention
+- [ ] 128k+ context fine-tuning
 
----
+### v0.16.0 — Embedding models + Export
 
-### P2 — Nice to have (v1.4+)
-
-#### Export formats
+- [ ] `task: embedding` — sentence transformers, BGE, E5
+- [ ] Contrastive loss, triplet loss
 - [ ] ONNX export (`soup export --format onnx`)
 - [ ] TensorRT-LLM export
+- [ ] Speculative decoding (`soup serve --speculative-decoding`)
+
+### v0.17.0 — Data + Audio
+
+- [ ] Local model as data generation provider
+- [ ] Quality filters (perplexity, coherence scoring)
+- [ ] `modality: audio` — Qwen2-Audio, Whisper fine-tuning
 - [ ] SGLang backend for serving
 
-#### Integrations
-- [ ] MLflow tracking (enterprise alternative to W&B)
-- [ ] TensorBoard integration
-- [ ] `uv` package manager support
+### v0.18.0 — Cloud GPU (monetization)
 
-#### Serving improvements
-- [ ] Speculative decoding (`soup serve --speculative-decoding`)
-- [ ] Batch inference mode (`soup infer --input prompts.jsonl --output results.jsonl`)
+Last step — all features are built, product is ready to sell.
 
-#### Data improvements
-- [ ] Multi-agent synthetic data generation (GraphGen-style)
-- [ ] Quality filters for generated data (perplexity, coherence scoring)
-- [ ] Local model as data generation provider (not just OpenAI API)
-
-#### Audio modality
-- [ ] `modality: audio` — Qwen2-Audio, Whisper fine-tuning
-- [ ] Audio dataset formats and inspection
-
-#### Smart suggestions
-- [ ] Auto-detect hardware and recommend optimal config
-- [ ] "You have 2×H100 — recommend FSDP2 + Unsloth" style hints
+- [ ] `soup login` — user registration, Stripe card linking
+- [ ] `soup cloud run --config soup.yaml --gpu a100` — cloud training
+- [ ] Backend API (FastAPI on VPS) — pod management, billing
+- [ ] RunPod API integration (our account, 20-30% markup)
+- [ ] `soup cloud status` — usage, balance, history
+- [ ] Landing page soup.cloud
+- [ ] Cost estimator and budget auto-stop
+- [ ] Vast.ai, Lambda Labs, Modal — additional providers
 
 ---
 

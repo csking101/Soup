@@ -59,7 +59,7 @@ class TrainingDisplay:
             progress_pct = 0
         bar_width = 30
         filled = int(bar_width * progress_pct / 100)
-        bar = "\u2588" * filled + "\u2591" * (bar_width - filled)
+        bar = "#" * filled + "-" * (bar_width - filled)
 
         epochs = self.config.training.epochs
         epoch_str = f"Epoch {self.current_epoch:.1f}/{epochs}"

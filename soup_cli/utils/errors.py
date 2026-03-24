@@ -72,6 +72,27 @@ ERROR_MAP = [
         "BitsAndBytes is not installed (needed for quantization).",
         "Run: pip install bitsandbytes>=0.41.0",
     ),
+    # CPU / quantization issues
+    (
+        "expanded size of the tensor",
+        "Model generation failed (likely 4bit quantization on CPU).",
+        "Use a GPU, or set quantization: none in your config for CPU training.",
+    ),
+    (
+        "expected m1 and m2 to have the same dtype",
+        "Dtype mismatch (likely 4bit quantization on CPU).",
+        "Use a GPU, or set quantization: none in your config for CPU training.",
+    ),
+    (
+        "Your setup doesn't support bf16",
+        "This training task requires GPU with bf16 support.",
+        "Use a CUDA GPU, or try a simpler task (SFT/DPO work on CPU).",
+    ),
+    (
+        "nms does not exist",
+        "torchvision version is incompatible with torch.",
+        "Run: pip install torchvision --force-reinstall (or check soup doctor).",
+    ),
     # Connection errors
     (
         "ConnectionError",

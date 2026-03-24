@@ -1,4 +1,4 @@
-"""Tests for v0.10.1 bug fixes - Windows Unicode, PPO params, dtype, diff."""
+"""Tests for v0.10.1/v0.10.2 bug fixes - Unicode, PPO, dtype, CPU compat."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -135,15 +135,15 @@ class TestComputeDtype:
 class TestDiffModelLoading:
     """Test diff command uses correct parameter names."""
 
-    def test_load_model_uses_torch_dtype(self):
-        """_load_model should pass torch_dtype, not dtype."""
+    def test_load_model_uses_dtype(self):
+        """_load_model should pass dtype= (not the old torch_dtype=)."""
         import inspect
 
         from soup_cli.commands.diff import _load_model
 
         source = inspect.getsource(_load_model)
-        assert "torch_dtype=" in source
-        assert "dtype=" not in source or "torch_dtype=" in source
+        assert "dtype=torch.float16" in source
+        assert "torch_dtype=" not in source
 
 
 # --- BUG-006: wandb version pin ---
@@ -165,11 +165,98 @@ class TestWandbVersionPin:
 class TestCPUQuantWarning:
     """Test that CPU + quantization produces a warning."""
 
-    def test_train_source_has_cpu_quant_warning(self):
-        """train.py should warn about quantization on CPU."""
+    def test_train_auto_disables_quant_on_cpu(self):
+        """train.py should auto-disable quantization on CPU."""
         import inspect
 
         from soup_cli.commands import train
 
         source = inspect.getsource(train)
-        assert "quantization on CPU" in source
+        assert "quantization is not" in source
+        assert 'cfg.training.quantization = "none"' in source
+
+
+# --- v0.10.2: Display progress bar uses ASCII ---
+
+
+class TestDisplayASCII:
+    """Test that training display uses ASCII-safe progress bars."""
+
+    def test_progress_bar_uses_ascii_chars(self):
+        """Progress bar should use # and - instead of Unicode blocks."""
+        import inspect
+
+        from soup_cli.monitoring.display import TrainingDisplay
+
+        source = inspect.getsource(TrainingDisplay)
+        assert '"#"' in source
+        assert '"-"' in source
+        assert "\\u2588" not in source
+        assert "\\u2591" not in source
+
+
+# --- v0.10.2: Plotext UnicodeEncodeError handling ---
+
+
+class TestPlotextFallback:
+    """Test that plotext errors are caught gracefully."""
+
+    def test_stats_catches_unicode_error(self):
+        """data stats should catch UnicodeEncodeError from plotext."""
+        import inspect
+
+        from soup_cli.commands import data
+
+        source = inspect.getsource(data)
+        assert "UnicodeEncodeError" in source
+
+
+# --- v0.10.2: Error messages for CPU issues ---
+
+
+class TestCPUErrorMessages:
+    """Test friendly error messages for CPU-specific failures."""
+
+    def test_tensor_size_error_mapped(self):
+        """Tensor expansion error should have a friendly message."""
+        from soup_cli.utils.errors import ERROR_MAP
+
+        patterns = [pattern for pattern, _, _ in ERROR_MAP]
+        assert any("expanded size" in p for p in patterns)
+
+    def test_dtype_mismatch_error_mapped(self):
+        """Dtype mismatch error should have a friendly message."""
+        from soup_cli.utils.errors import ERROR_MAP
+
+        patterns = [pattern for pattern, _, _ in ERROR_MAP]
+        assert any("same dtype" in p for p in patterns)
+
+    def test_bf16_error_mapped(self):
+        """bf16 GPU error should have a friendly message."""
+        from soup_cli.utils.errors import ERROR_MAP
+
+        patterns = [pattern for pattern, _, _ in ERROR_MAP]
+        assert any("bf16" in p for p in patterns)
+
+    def test_torchvision_error_mapped(self):
+        """torchvision nms error should have a friendly message."""
+        from soup_cli.utils.errors import ERROR_MAP
+
+        patterns = [pattern for pattern, _, _ in ERROR_MAP]
+        assert any("nms" in p for p in patterns)
+
+
+# --- v0.10.2: Doctor torchvision check ---
+
+
+class TestDoctorTorchvisionCheck:
+    """Test that soup doctor checks torchvision compatibility."""
+
+    def test_doctor_has_torchvision_check(self):
+        """doctor.py should have torchvision compatibility check."""
+        import inspect
+
+        from soup_cli.commands import doctor
+
+        source = inspect.getsource(doctor)
+        assert "_check_torchvision_compat" in source

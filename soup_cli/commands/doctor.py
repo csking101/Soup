@@ -100,6 +100,9 @@ def doctor():
 
     console.print(table)
 
+    # Check torchvision + torch compatibility
+    _check_torchvision_compat(issues)
+
     # Summary
     if issues:
         console.print(f"\n[yellow]Found {len(issues)} issue(s):[/]")
@@ -160,6 +163,34 @@ def _check_gpu():
                 title="GPU",
             )
         )
+
+
+def _check_torchvision_compat(issues: list):
+    """Check that torchvision version is compatible with torch."""
+    try:
+        import torch
+        import torchvision
+
+        torch_ver = torch.__version__.split("+")[0]
+        tv_ver = torchvision.__version__.split("+")[0]
+        torch_minor = ".".join(torch_ver.split(".")[:2])
+        tv_minor = ".".join(tv_ver.split(".")[:2])
+
+        # Known compatible pairs (torch minor -> torchvision minor)
+        compat = {
+            "2.6": "0.21", "2.5": "0.20", "2.4": "0.19",
+            "2.3": "0.18", "2.2": "0.17", "2.1": "0.16", "2.0": "0.15",
+        }
+        expected_tv = compat.get(torch_minor)
+        if expected_tv and not tv_minor.startswith(expected_tv):
+            msg = (
+                f"torchvision {tv_ver} may be incompatible with torch {torch_ver}. "
+                f"Expected torchvision {expected_tv}.x"
+            )
+            console.print(f"  [yellow]Warning:[/] {msg}")
+            issues.append(msg)
+    except ImportError:
+        pass
 
 
 def _version_ok(installed: str, minimum: str) -> bool:

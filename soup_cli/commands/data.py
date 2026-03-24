@@ -361,6 +361,11 @@ def stats(
             plt.ylabel("Count")
             plt.theme("dark")
             plt.show()
+    except UnicodeEncodeError:
+        console.print(
+            "\n[dim]Histogram skipped (Windows encoding).[/] "
+            "Set PYTHONIOENCODING=utf-8 to enable."
+        )
     except ImportError:
         console.print(
             "\n[dim]Install plotext for histograms:[/] [bold]pip install plotext[/]"
