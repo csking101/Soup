@@ -167,8 +167,9 @@ class PPOTrainerWrapper:
             trainer_kwargs["processing_class"] = self.tokenizer
             if "train_dataset" in ppo_trainer_params:
                 trainer_kwargs["train_dataset"] = train_ds
-            else:
+            elif "dataset" in ppo_trainer_params:
                 trainer_kwargs["dataset"] = train_ds
+            # else: dataset not accepted by constructor — store for .train()
             if reward_funcs and "reward_funcs" in ppo_trainer_params:
                 trainer_kwargs["reward_funcs"] = reward_funcs
         else:
@@ -176,6 +177,11 @@ class PPOTrainerWrapper:
             trainer_kwargs["config"] = ppo_config
             trainer_kwargs["tokenizer"] = self.tokenizer
             trainer_kwargs["dataset"] = train_ds
+
+        # Track whether dataset was passed to constructor
+        self._dataset_in_constructor = (
+            "train_dataset" in trainer_kwargs or "dataset" in trainer_kwargs
+        )
 
         self.trainer = PPOTrainer(**trainer_kwargs)
 
@@ -304,6 +310,13 @@ class PPOTrainerWrapper:
     def _train_builtin(self, display, tracker, run_id, resume_from_checkpoint):
         """Train using trl >=0.28 built-in trainer.train() method."""
         start = time.time()
+
+        # If dataset wasn't accepted by constructor, set it on the trainer
+        if not self._dataset_in_constructor:
+            if hasattr(self.trainer, "train_dataset"):
+                self.trainer.train_dataset = self._train_ds
+            elif hasattr(self.trainer, "dataset"):
+                self.trainer.dataset = self._train_ds
 
         if display:
             from soup_cli.monitoring.callback import SoupTrainerCallback

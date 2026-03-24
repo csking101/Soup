@@ -1,4 +1,4 @@
-"""Tests for v0.10.1-v0.10.4 bug fixes - Unicode, PPO, dtype, CPU, trl API compat."""
+"""Tests for v0.10.1-v0.10.5 bug fixes - Unicode, PPO, dtype, CPU, trl API compat."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -370,3 +370,126 @@ class TestUseCPUErrorMessage:
 
         patterns = [pattern for pattern, _, _ in ERROR_MAP]
         assert any("use_cpu" in p for p in patterns)
+
+
+# --- v0.10.5: PPO dataset parameter compatibility (trl >=0.28) ---
+
+
+class TestPPODatasetCompat:
+    """Test PPO trainer handles dataset param removal in newer trl versions."""
+
+    def test_ppo_setup_checks_dataset_in_constructor(self):
+        """PPO setup should check whether dataset/train_dataset is accepted."""
+        import inspect
+
+        from soup_cli.trainer import ppo
+
+        source = inspect.getsource(ppo)
+        # Must check both train_dataset and dataset params
+        assert '"train_dataset" in ppo_trainer_params' in source
+        assert '"dataset" in ppo_trainer_params' in source
+        # Must track whether dataset was passed to constructor
+        assert "_dataset_in_constructor" in source
+
+    def test_ppo_train_sets_dataset_if_not_in_constructor(self):
+        """PPO _train_builtin should set dataset on trainer if not in init."""
+        import inspect
+
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        source = inspect.getsource(PPOTrainerWrapper._train_builtin)
+        assert "_dataset_in_constructor" in source
+        assert "train_dataset" in source
+
+    def test_ppo_dataset_in_constructor_flag(self):
+        """PPOTrainerWrapper should track _dataset_in_constructor after setup."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as mock_patch
+
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="ppo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = PPOTrainerWrapper(cfg, device="cpu")
+
+        # Real class whose __init__ does NOT accept dataset/train_dataset
+        class FakePPOTrainer:
+            def __init__(self, *, model=None, args=None,
+                         processing_class=None, reward_funcs=None):
+                pass
+
+        class FakePPOConfig:
+            def __init__(self, **kwargs):
+                pass
+
+        dataset = {
+            "train": [
+                {"prompt": "What is 2+2?", "answer": "4"},
+            ]
+        }
+
+        with mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_reward"), \
+             mock_patch(
+                 "soup_cli.trainer.ppo.PPOTrainerWrapper._setup_transformers"
+             ):
+            wrapper.model = MagicMock()
+            wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
+            wrapper.tokenizer = MagicMock()
+            wrapper.tokenizer.pad_token = "pad"
+
+            with mock_patch("trl.PPOTrainer", FakePPOTrainer), \
+                 mock_patch("trl.PPOConfig", FakePPOConfig):
+                wrapper.setup(dataset)
+
+            # dataset should NOT be in constructor since FakePPOTrainer
+            # doesn't accept it
+            assert wrapper._dataset_in_constructor is False
+
+    def test_ppo_dataset_in_constructor_when_accepted(self):
+        """_dataset_in_constructor should be True when train_dataset is accepted."""
+        from unittest.mock import MagicMock
+        from unittest.mock import patch as mock_patch
+
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="ppo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = PPOTrainerWrapper(cfg, device="cpu")
+
+        # Real class whose __init__ DOES accept train_dataset
+        class FakePPOTrainer:
+            def __init__(self, *, model=None, args=None,
+                         processing_class=None, train_dataset=None,
+                         reward_funcs=None):
+                pass
+
+        class FakePPOConfig:
+            def __init__(self, **kwargs):
+                pass
+
+        dataset = {
+            "train": [
+                {"prompt": "What is 2+2?", "answer": "4"},
+            ]
+        }
+
+        with mock_patch("soup_cli.trainer.ppo.PPOTrainerWrapper._setup_reward"), \
+             mock_patch(
+                 "soup_cli.trainer.ppo.PPOTrainerWrapper._setup_transformers"
+             ):
+            wrapper.model = MagicMock()
+            wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
+            wrapper.tokenizer = MagicMock()
+            wrapper.tokenizer.pad_token = "pad"
+
+            with mock_patch("trl.PPOTrainer", FakePPOTrainer), \
+                 mock_patch("trl.PPOConfig", FakePPOConfig):
+                wrapper.setup(dataset)
+
+            assert wrapper._dataset_in_constructor is True
