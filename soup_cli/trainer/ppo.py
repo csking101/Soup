@@ -141,6 +141,10 @@ class PPOTrainerWrapper:
         if "optimize_cuda_cache" in ppo_params:
             ppo_kwargs["optimize_cuda_cache"] = self.device == "cuda"
 
+        # CPU support: trl PPOConfig requires use_cpu=True when no CUDA
+        if self.device == "cpu" and "use_cpu" in ppo_params:
+            ppo_kwargs["use_cpu"] = True
+
         ppo_config = PPOConfig(**ppo_kwargs)
 
         # --- Build reward functions list for PPOTrainer ---

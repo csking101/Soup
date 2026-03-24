@@ -89,6 +89,11 @@ ERROR_MAP = [
         "Use a CUDA GPU, or try a simpler task (SFT/DPO work on CPU).",
     ),
     (
+        "use_cpu",
+        "This training task requires use_cpu flag on CPU-only systems.",
+        "Use a CUDA GPU for best results, or upgrade trl: pip install -U trl",
+    ),
+    (
         "nms does not exist",
         "torchvision version is incompatible with torch.",
         "Run: pip install torchvision --force-reinstall (or check soup doctor).",

@@ -111,29 +111,47 @@ class GRPOTrainerWrapper:
         )
         warmup_steps = int(total_steps * tcfg.warmup_ratio)
 
+        # --- Warn if running on CPU (trl GRPO has known CPU issues) ---
+        if self.device == "cpu":
+            console.print(
+                "[yellow]Warning: GRPO on CPU is experimental. "
+                "trl's GRPOTrainer may produce empty generations on CPU, "
+                "causing tensor size errors. A CUDA GPU is recommended.[/]"
+            )
+
         # --- GRPO config ---
-        grpo_config = GRPOConfig(
-            output_dir=str(output_dir),
-            num_train_epochs=tcfg.epochs,
-            per_device_train_batch_size=batch_size,
-            gradient_accumulation_steps=tcfg.gradient_accumulation_steps,
-            learning_rate=tcfg.lr,
-            warmup_steps=warmup_steps,
-            weight_decay=tcfg.weight_decay,
-            max_grad_norm=tcfg.max_grad_norm,
-            optim=tcfg.optimizer,
-            lr_scheduler_type=tcfg.scheduler,
-            logging_steps=tcfg.logging_steps,
-            save_steps=tcfg.save_steps,
-            save_total_limit=3,
-            bf16=self.device == "cuda",
-            report_to=self.report_to,
-            remove_unused_columns=False,
-            deepspeed=self.deepspeed_config,
-            beta=tcfg.grpo_beta,
-            num_generations=tcfg.num_generations,
-            max_completion_length=cfg.data.max_length,
-        )
+        grpo_kwargs = {
+            "output_dir": str(output_dir),
+            "num_train_epochs": tcfg.epochs,
+            "per_device_train_batch_size": batch_size,
+            "gradient_accumulation_steps": tcfg.gradient_accumulation_steps,
+            "learning_rate": tcfg.lr,
+            "warmup_steps": warmup_steps,
+            "weight_decay": tcfg.weight_decay,
+            "max_grad_norm": tcfg.max_grad_norm,
+            "optim": tcfg.optimizer,
+            "lr_scheduler_type": tcfg.scheduler,
+            "logging_steps": tcfg.logging_steps,
+            "save_steps": tcfg.save_steps,
+            "save_total_limit": 3,
+            "bf16": self.device == "cuda",
+            "report_to": self.report_to,
+            "remove_unused_columns": False,
+            "deepspeed": self.deepspeed_config,
+            "beta": tcfg.grpo_beta,
+            "num_generations": tcfg.num_generations,
+            "max_completion_length": cfg.data.max_length,
+        }
+
+        # CPU support: set use_cpu if supported by trl version
+        if self.device == "cpu":
+            import inspect as _inspect
+
+            grpo_params = _inspect.signature(GRPOConfig).parameters
+            if "use_cpu" in grpo_params:
+                grpo_kwargs["use_cpu"] = True
+
+        grpo_config = GRPOConfig(**grpo_kwargs)
 
         # --- Trainer ---
         self.trainer = GRPOTrainer(

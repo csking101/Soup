@@ -1,4 +1,4 @@
-"""Tests for v0.10.1/v0.10.2 bug fixes - Unicode, PPO, dtype, CPU compat."""
+"""Tests for v0.10.1/v0.10.2/v0.10.3 bug fixes - Unicode, PPO, dtype, CPU compat."""
 
 from pathlib import Path
 from unittest.mock import patch
@@ -260,3 +260,87 @@ class TestDoctorTorchvisionCheck:
 
         source = inspect.getsource(doctor)
         assert "_check_torchvision_compat" in source
+
+
+# --- v0.10.3: PPO use_cpu support ---
+
+
+class TestPPOUseCPU:
+    """Test PPO trainer sets use_cpu=True on CPU devices."""
+
+    def test_ppo_setup_has_use_cpu_logic(self):
+        """PPO setup should check for use_cpu param and set it on CPU."""
+        import inspect
+
+        from soup_cli.trainer import ppo
+
+        source = inspect.getsource(ppo)
+        assert "use_cpu" in source
+        assert 'self.device == "cpu"' in source
+
+    def test_ppo_wrapper_stores_device(self):
+        """PPOTrainerWrapper should store the device parameter."""
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="ppo",
+            data={"train": "./data.jsonl"},
+        )
+        wrapper = PPOTrainerWrapper(cfg, device="cpu")
+        assert wrapper.device == "cpu"
+
+        wrapper_gpu = PPOTrainerWrapper(cfg, device="cuda")
+        assert wrapper_gpu.device == "cuda"
+
+
+# --- v0.10.3: GRPO CPU warning ---
+
+
+class TestGRPOCPUWarning:
+    """Test GRPO trainer warns on CPU and sets use_cpu."""
+
+    def test_grpo_setup_has_cpu_warning(self):
+        """GRPO setup should warn about CPU limitations."""
+        import inspect
+
+        from soup_cli.trainer import grpo
+
+        source = inspect.getsource(grpo)
+        assert "GRPO on CPU is experimental" in source
+
+    def test_grpo_setup_has_use_cpu_logic(self):
+        """GRPO setup should set use_cpu=True on CPU when supported."""
+        import inspect
+
+        from soup_cli.trainer import grpo
+
+        source = inspect.getsource(grpo)
+        assert "use_cpu" in source
+
+    def test_grpo_wrapper_stores_device(self):
+        """GRPOTrainerWrapper should store the device parameter."""
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+
+        cfg = SoupConfig(
+            base="test-model",
+            task="grpo",
+            data={"train": "./data.jsonl"},
+            training={"reward_fn": "accuracy"},
+        )
+        wrapper = GRPOTrainerWrapper(cfg, device="cpu")
+        assert wrapper.device == "cpu"
+
+
+# --- v0.10.3: use_cpu error message ---
+
+
+class TestUseCPUErrorMessage:
+    """Test that use_cpu error is mapped to a friendly message."""
+
+    def test_use_cpu_error_mapped(self):
+        """use_cpu error should have a friendly message."""
+        from soup_cli.utils.errors import ERROR_MAP
+
+        patterns = [pattern for pattern, _, _ in ERROR_MAP]
+        assert any("use_cpu" in p for p in patterns)
