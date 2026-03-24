@@ -603,7 +603,7 @@ soup version
 
 # Full system info (useful for bug reports)
 soup version --full
-# -> soup v0.10.7 | Python 3.11.5 | CUDA 12.1 | extras: serve, data
+# -> soup v0.10.8 | Python 3.11.5 | CUDA 12.1 | extras: serve, data
 ```
 
 ## Web UI
@@ -767,7 +767,7 @@ soup --verbose <command>                      Full traceback on errors
 - GPU with CUDA (recommended) or Apple Silicon (MPS) or CPU (experimental)
 - 8 GB+ VRAM for 7B models with QLoRA
 
-> **CPU note:** All training tasks (SFT, DPO, GRPO, PPO) work on CPU but will be very slow. Quantization (`4bit`/`8bit`) is auto-disabled on CPU. GRPO on CPU uses `min_new_tokens=1` to prevent empty generation errors.
+> **CPU note:** All training tasks (SFT, DPO, GRPO, PPO) work on CPU but will be very slow. Quantization (`4bit`/`8bit`) is auto-disabled on CPU. GRPO on CPU uses `min_new_tokens=1` to prevent empty generation errors. A default chat template is set automatically if the tokenizer lacks one. PPO datasets are tokenized before training to ensure compatibility with trl's experimental API.
 
 ### Optional Extras
 

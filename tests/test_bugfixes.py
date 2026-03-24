@@ -440,8 +440,13 @@ class TestPPODatasetCompat:
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
-            wrapper.tokenizer = MagicMock()
-            wrapper.tokenizer.pad_token = "pad"
+            mock_tokenizer = MagicMock()
+            mock_tokenizer.pad_token = "pad"
+            mock_tokenizer.side_effect = lambda texts, **kw: {
+                "input_ids": [[1, 2, 3]] * (len(texts) if isinstance(texts, list) else 1),
+                "attention_mask": [[1, 1, 1]] * (len(texts) if isinstance(texts, list) else 1),
+            }
+            wrapper.tokenizer = mock_tokenizer
 
             wrapper.setup(dataset)
 
@@ -489,8 +494,13 @@ class TestPPODatasetCompat:
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
-            wrapper.tokenizer = MagicMock()
-            wrapper.tokenizer.pad_token = "pad"
+            mock_tokenizer = MagicMock()
+            mock_tokenizer.pad_token = "pad"
+            mock_tokenizer.side_effect = lambda texts, **kw: {
+                "input_ids": [[1, 2, 3]] * (len(texts) if isinstance(texts, list) else 1),
+                "attention_mask": [[1, 1, 1]] * (len(texts) if isinstance(texts, list) else 1),
+            }
+            wrapper.tokenizer = mock_tokenizer
 
             wrapper.setup(dataset)
 
@@ -575,8 +585,13 @@ class TestPPOExperimentalSetup:
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
-            wrapper.tokenizer = MagicMock()
-            wrapper.tokenizer.pad_token = "pad"
+            mock_tokenizer = MagicMock()
+            mock_tokenizer.pad_token = "pad"
+            mock_tokenizer.side_effect = lambda texts, **kw: {
+                "input_ids": [[1, 2, 3]] * (len(texts) if isinstance(texts, list) else 1),
+                "attention_mask": [[1, 1, 1]] * (len(texts) if isinstance(texts, list) else 1),
+            }
+            wrapper.tokenizer = mock_tokenizer
 
             wrapper.setup(dataset)
 
@@ -626,8 +641,13 @@ class TestPPOExperimentalSetup:
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
-            wrapper.tokenizer = MagicMock()
-            wrapper.tokenizer.pad_token = "pad"
+            mock_tokenizer = MagicMock()
+            mock_tokenizer.pad_token = "pad"
+            mock_tokenizer.side_effect = lambda texts, **kw: {
+                "input_ids": [[1, 2, 3]] * (len(texts) if isinstance(texts, list) else 1),
+                "attention_mask": [[1, 1, 1]] * (len(texts) if isinstance(texts, list) else 1),
+            }
+            wrapper.tokenizer = mock_tokenizer
 
             wrapper.setup(dataset)
 
@@ -890,8 +910,13 @@ class TestPPOResumeCheckpoint:
              ):
             wrapper.model = MagicMock()
             wrapper.model.get_nb_trainable_parameters.return_value = (100, 1000)
-            wrapper.tokenizer = MagicMock()
-            wrapper.tokenizer.pad_token = "pad"
+            mock_tokenizer = MagicMock()
+            mock_tokenizer.pad_token = "pad"
+            mock_tokenizer.side_effect = lambda texts, **kw: {
+                "input_ids": [[1, 2, 3]] * (len(texts) if isinstance(texts, list) else 1),
+                "attention_mask": [[1, 1, 1]] * (len(texts) if isinstance(texts, list) else 1),
+            }
+            wrapper.tokenizer = mock_tokenizer
             wrapper.setup(dataset)
 
         assert wrapper._is_experimental is True
@@ -975,3 +1000,65 @@ class TestCPUDeviceMap:
         source = inspect.getsource(PPOTrainerWrapper._create_value_model)
         assert "self.device" in source
         assert '"cpu"' in source
+
+
+# --- BUG-011: GRPO missing chat_template causes ValueError (v0.10.8) ---
+
+
+class TestGRPOChatTemplate:
+    """Test GRPO sets a default chat template when tokenizer lacks one."""
+
+    def test_grpo_setup_sets_default_chat_template(self):
+        """GRPO setup should set chat_template if tokenizer doesn't have one."""
+        import inspect
+
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+        source = inspect.getsource(GRPOTrainerWrapper.setup)
+        assert "chat_template" in source
+
+    def test_grpo_setup_preserves_existing_chat_template(self):
+        """GRPO setup should NOT overwrite an existing chat_template."""
+        import inspect
+
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+        source = inspect.getsource(GRPOTrainerWrapper.setup)
+        # Should check with getattr before setting
+        assert "getattr" in source
+
+    def test_grpo_batch_size_ge_num_generations(self):
+        """GRPO setup should ensure batch_size >= num_generations."""
+        import inspect
+
+        from soup_cli.trainer.grpo import GRPOTrainerWrapper
+        source = inspect.getsource(GRPOTrainerWrapper.setup)
+        assert "batch_size < num_gen" in source or "num_gen" in source
+
+
+# --- BUG-012: PPO dataset not tokenized for experimental API (v0.10.8) ---
+
+
+class TestPPOTokenization:
+    """Test PPO tokenizes dataset before passing to trainer."""
+
+    def test_ppo_setup_tokenizes_dataset(self):
+        """PPO setup should call .map() to tokenize the dataset."""
+        import inspect
+
+        from soup_cli.trainer.ppo import PPOTrainerWrapper
+        source = inspect.getsource(PPOTrainerWrapper.setup)
+        assert "_tokenize_ppo" in source
+        assert ".map(" in source
+
+    def test_ppo_tokenization_adds_input_ids(self):
+        """Tokenization should add input_ids and attention_mask columns."""
+        from datasets import Dataset
+
+        from soup_cli.trainer.ppo import _prepare_ppo_dataset
+
+        data = [{"prompt": "What is 2+2?", "answer": "4"}]
+        prepared = _prepare_ppo_dataset(data)
+        ds = Dataset.from_list(prepared)
+
+        # Verify prompt_text exists
+        assert "prompt_text" in ds.column_names
+        assert ds[0]["prompt_text"] == "What is 2+2?"

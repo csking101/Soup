@@ -62,6 +62,16 @@ class GRPOTrainerWrapper:
         else:
             self._setup_transformers(cfg, tcfg)
 
+        # Ensure tokenizer has a chat template — trl's GRPOTrainer calls
+        # apply_chat_template() when it detects conversational prompts (message
+        # lists) and will raise ValueError if the template is missing.
+        if not getattr(self.tokenizer, "chat_template", None):
+            self.tokenizer.chat_template = (
+                "{% for msg in messages %}"
+                "{{ msg['content'] }}\n"
+                "{% endfor %}"
+            )
+
         trainable, total = self.model.get_nb_trainable_parameters()
         pct = 100 * trainable / total
         console.print(
@@ -86,6 +96,12 @@ class GRPOTrainerWrapper:
             # GRPO generates N completions per prompt → more memory
             batch_size = max(1, batch_size // tcfg.num_generations)
             console.print(f"[green]Auto batch size (GRPO):[/] {batch_size}")
+
+        # Ensure batch_size >= num_generations (trl requires
+        # generation_batch_size to be divisible by num_generations)
+        num_gen = tcfg.num_generations
+        if batch_size < num_gen:
+            batch_size = num_gen
 
         # --- Dataset ---
         # GRPO expects prompts — extract from messages or use prompt field
@@ -157,6 +173,12 @@ class GRPOTrainerWrapper:
                 grpo_kwargs["generation_kwargs"] = {"min_new_tokens": 1}
 
         grpo_config = GRPOConfig(**grpo_kwargs)
+
+        # Workaround: also set min_new_tokens on model's generation_config directly.
+        # GRPOConfig may not forward generation_kwargs to model.generate() in all
+        # trl versions, so this ensures the model always generates at least 1 token.
+        if self.device == "cpu" and hasattr(self.model, "generation_config"):
+            self.model.generation_config.min_new_tokens = 1
 
         # --- Trainer ---
         self.trainer = GRPOTrainer(

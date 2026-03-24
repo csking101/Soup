@@ -103,6 +103,20 @@ class PPOTrainerWrapper:
         train_data = _prepare_ppo_dataset(dataset["train"])
         train_ds = Dataset.from_list(train_data)
 
+        # Tokenize dataset: trl experimental PPOTrainer expects input_ids,
+        # not raw text. Add input_ids/attention_mask from prompt_text.
+        max_len = cfg.data.max_length
+
+        def _tokenize_ppo(examples):
+            return self.tokenizer(
+                examples["prompt_text"],
+                truncation=True,
+                max_length=max_len,
+                padding=False,
+            )
+
+        train_ds = train_ds.map(_tokenize_ppo, batched=True)
+
         # --- Output dir ---
         output_dir = Path(cfg.output)
         if cfg.experiment_name:
