@@ -2,7 +2,7 @@
 
 **Repo:** https://github.com/MakazhanAlpamys/Soup
 **PyPI:** https://pypi.org/project/soup-cli/ (`pip install soup-cli`)
-**Version:** v0.10.3 | 638 tests | CI green
+**Version:** v0.10.4 | 639 tests | CI green
 
 ### How to publish
 
@@ -31,7 +31,7 @@ git push --tags
 - **Tests:** 624 tests, 41 files, ruff lint, CI on Python 3.9/3.11/3.12
 - **v0.10.1 bugfixes:** Windows UnicodeEncodeError, PPO trl compat, compute dtype for CPU, diff torch_dtype, wandb version pin
 - **v0.10.2 bugfixes:** ASCII progress bar, plotext fallback, auto-disable 4bit on CPU, friendly CPU error messages, torchvision compat check in doctor
-- **v0.10.3 bugfixes:** PPO use_cpu for CPU training, GRPO CPU warning + use_cpu, use_cpu error message
+- **v0.10.3-v0.10.4 bugfixes:** PPO use_cpu for CPU training, PPO trl >=0.28 API compat (args= vs config=, builtin .train()), GRPO CPU warning + use_cpu, use_cpu error message
 
 ---
 
