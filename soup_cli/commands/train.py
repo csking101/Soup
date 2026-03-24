@@ -86,7 +86,13 @@ def train(
         except ImportError:
             console.print(
                 "[red]wandb not installed.[/]\n"
-                "Run: [bold]pip install wandb[/]"
+                "Run: [bold]pip install 'soup-cli[wandb]'[/]"
+            )
+            raise typer.Exit(1)
+        except Exception as wandb_err:
+            console.print(
+                f"[red]wandb import error:[/] {wandb_err}\n"
+                "Try: [bold]pip install 'wandb>=0.15.0,<0.18.0'[/]"
             )
             raise typer.Exit(1)
 
@@ -100,6 +106,13 @@ def train(
     # Detect hardware
     device, device_name = detect_device()
     gpu_info = get_gpu_info()
+
+    # Warn about quantization on CPU
+    if device == "cpu" and cfg.training.quantization in ("4bit", "8bit"):
+        console.print(
+            f"[yellow]Warning: {cfg.training.quantization} quantization on CPU "
+            "may cause errors. Consider using quantization: none for CPU.[/]"
+        )
 
     backend_label = cfg.backend
     if cfg.backend == "unsloth":
@@ -150,7 +163,7 @@ def train(
             raise typer.Exit()
 
     if dry_run:
-        console.print("[yellow]Dry run — validating data...[/]")
+        console.print("[yellow]Dry run - validating data...[/]")
         dataset = load_dataset(cfg.data)
         console.print(f"[green]Data OK:[/] {len(dataset['train'])} train samples")
         if "val" in dataset:
@@ -236,7 +249,7 @@ def train(
     # Report
     console.print(
         Panel(
-            f"Loss: [bold]{result['initial_loss']:.4f} → {result['final_loss']:.4f}[/]\n"
+            f"Loss: [bold]{result['initial_loss']:.4f} -> {result['final_loss']:.4f}[/]\n"
             f"Duration: [bold]{result['duration']}[/]\n"
             f"Output: [bold]{result['output_dir']}[/]\n"
             f"Run ID: [bold]{run_id}[/]\n\n"

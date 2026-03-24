@@ -46,10 +46,10 @@ def ui(
         Panel(
             f"URL:  [bold]{url}[/]\n\n"
             f"Pages:\n"
-            f"  [bold]Dashboard[/]      — View experiments, loss charts, system info\n"
-            f"  [bold]New Training[/]   — Create config from templates, start training\n"
-            f"  [bold]Data Explorer[/]  — Browse and inspect datasets\n"
-            f"  [bold]Model Chat[/]     — Chat with a running inference server\n\n"
+            f"  [bold]Dashboard[/]      - View experiments, loss charts, system info\n"
+            f"  [bold]New Training[/]   - Create config from templates, start training\n"
+            f"  [bold]Data Explorer[/]  - Browse and inspect datasets\n"
+            f"  [bold]Model Chat[/]     - Chat with a running inference server\n\n"
             f"Press [bold]Ctrl+C[/] to stop.",
             title="[bold green]Soup Web UI[/]",
         )

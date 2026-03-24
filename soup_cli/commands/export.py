@@ -83,7 +83,7 @@ def export(
     merge_dir = None
 
     if is_adapter:
-        console.print("[yellow]LoRA adapter detected — merging with base model first...[/]")
+        console.print("[yellow]LoRA adapter detected - merging with base model first...[/]")
         base_model = base or _detect_base_model(adapter_config_path)
         if not base_model:
             console.print(
@@ -152,7 +152,7 @@ def export(
             shutil.rmtree(merge_dir, ignore_errors=True)
 
     if not output_path.exists():
-        console.print("[red]Export failed — output file not created.[/]")
+        console.print("[red]Export failed - output file not created.[/]")
         raise typer.Exit(1)
 
     file_size = output_path.stat().st_size

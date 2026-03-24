@@ -39,7 +39,7 @@ DEPS = [
 
 def doctor():
     """Check system dependencies, GPU, and compatibility."""
-    console.print("[bold]Soup Doctor[/] — checking your environment...\n")
+    console.print("[bold]Soup Doctor[/] - checking your environment...\n")
 
     # System info
     console.print(
@@ -93,7 +93,7 @@ def doctor():
             table.add_row(
                 pkg_name,
                 "yes" if required else "optional",
-                "—",
+                "-",
                 f">={min_ver}",
                 status,
             )

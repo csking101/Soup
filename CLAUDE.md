@@ -182,3 +182,4 @@ Test suite lives in `tests/`:
 | `test_ui.py` | Web UI command, FastAPI endpoints, static files, config validation |
 | `test_vllm_serve.py` | vLLM backend detection, engine creation, serve --backend flag, FastAPI app |
 | `test_ppo.py` | PPO config, reward model config, data prep, RLHF template, routing, sweep |
+| `test_bugfixes.py` | v0.10.1 bugfixes: Windows Unicode, PPO params, compute dtype, diff dtype, wandb pin |

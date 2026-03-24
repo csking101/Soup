@@ -24,7 +24,7 @@ def load_config(path: Path) -> SoupConfig:
     except ValidationError as e:
         console.print("[red bold]Config validation error:[/]\n")
         for err in e.errors():
-            loc = " → ".join(str(part) for part in err["loc"])
+            loc = " -> ".join(str(part) for part in err["loc"])
             console.print(f"  [red]{loc}:[/] {err['msg']}")
         raise SystemExit(1)
 
@@ -46,6 +46,6 @@ def load_config_from_string(yaml_str: str) -> SoupConfig:
     except ValidationError as exc:
         errors = []
         for err in exc.errors():
-            loc = " → ".join(str(part) for part in err["loc"])
+            loc = " -> ".join(str(part) for part in err["loc"])
             errors.append(f"{loc}: {err['msg']}")
         raise ValueError("; ".join(errors))

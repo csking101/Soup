@@ -126,7 +126,7 @@ def quickstart(
         console.print(f"[green]Created:[/] {config_path}")
 
     if dry_run:
-        console.print("\n[yellow]Dry run — files created, skipping training.[/]")
+        console.print("\n[yellow]Dry run - files created, skipping training.[/]")
         console.print(f"To train: [bold]soup train --config {config_path}[/]")
         raise typer.Exit()
 

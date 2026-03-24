@@ -57,7 +57,7 @@ def list_runs(
         # Format loss
         loss_str = ""
         if run.get("initial_loss") and run.get("final_loss"):
-            loss_str = f"{run['initial_loss']:.3f} → {run['final_loss']:.3f}"
+            loss_str = f"{run['initial_loss']:.3f} -> {run['final_loss']:.3f}"
 
         # Format duration
         duration_str = ""
@@ -117,7 +117,7 @@ def show(
         status_str = "[yellow]running[/]"
 
     # Format duration
-    duration_str = "—"
+    duration_str = "-"
     if run.get("duration_secs"):
         secs = run["duration_secs"]
         hours = int(secs // 3600)
@@ -127,19 +127,19 @@ def show(
     # Build info panel
     info_lines = [
         f"Run ID:     [bold]{run['run_id']}[/]",
-        f"Name:       {run.get('experiment_name') or '—'}",
+        f"Name:       {run.get('experiment_name') or '-'}",
         f"Status:     {status_str}",
         f"Date:       {run['created_at'][:19].replace('T', ' ')}",
         "",
-        f"Model:      [bold]{run.get('base_model') or '—'}[/]",
-        f"Task:       {run.get('task') or '—'}",
-        f"Device:     {run.get('device_name') or '—'} ({run.get('device') or '—'})",
-        f"GPU Memory: {run.get('gpu_memory') or '—'}",
+        f"Model:      [bold]{run.get('base_model') or '-'}[/]",
+        f"Task:       {run.get('task') or '-'}",
+        f"Device:     {run.get('device_name') or '-'} ({run.get('device') or '-'})",
+        f"GPU Memory: {run.get('gpu_memory') or '-'}",
         "",
         f"Loss:       {_fmt_loss(run)}",
-        f"Steps:      {run.get('total_steps') or '—'}",
+        f"Steps:      {run.get('total_steps') or '-'}",
         f"Duration:   {duration_str}",
-        f"Output:     {run.get('output_dir') or '—'}",
+        f"Output:     {run.get('output_dir') or '-'}",
     ]
     console.print(Panel("\n".join(info_lines), title="Run Details"))
 
@@ -197,14 +197,14 @@ def compare(
     table.add_column(r2["run_id"][:20], justify="right")
 
     rows = [
-        ("Name", r1.get("experiment_name") or "—", r2.get("experiment_name") or "—"),
-        ("Model", r1.get("base_model") or "—", r2.get("base_model") or "—"),
-        ("Task", r1.get("task") or "—", r2.get("task") or "—"),
-        ("Device", r1.get("device_name") or "—", r2.get("device_name") or "—"),
-        ("Status", r1.get("status") or "—", r2.get("status") or "—"),
+        ("Name", r1.get("experiment_name") or "-", r2.get("experiment_name") or "-"),
+        ("Model", r1.get("base_model") or "-", r2.get("base_model") or "-"),
+        ("Task", r1.get("task") or "-", r2.get("task") or "-"),
+        ("Device", r1.get("device_name") or "-", r2.get("device_name") or "-"),
+        ("Status", r1.get("status") or "-", r2.get("status") or "-"),
         ("Initial Loss", _fmt_float(r1.get("initial_loss")), _fmt_float(r2.get("initial_loss"))),
         ("Final Loss", _fmt_float(r1.get("final_loss")), _fmt_float(r2.get("final_loss"))),
-        ("Steps", str(r1.get("total_steps") or "—"), str(r2.get("total_steps") or "—")),
+        ("Steps", str(r1.get("total_steps") or "-"), str(r2.get("total_steps") or "-")),
         ("Duration", _fmt_duration(r1.get("duration_secs")),
          _fmt_duration(r2.get("duration_secs"))),
     ]
@@ -223,19 +223,19 @@ def compare(
     training1 = c1.get("training", {})
     training2 = c2.get("training", {})
     rows.extend([
-        ("Epochs", str(training1.get("epochs", "—")), str(training2.get("epochs", "—"))),
-        ("Learning Rate", str(training1.get("lr", "—")), str(training2.get("lr", "—"))),
-        ("Batch Size", str(training1.get("batch_size", "—")),
-         str(training2.get("batch_size", "—"))),
-        ("Quantization", str(training1.get("quantization", "—")),
-         str(training2.get("quantization", "—"))),
+        ("Epochs", str(training1.get("epochs", "-")), str(training2.get("epochs", "-"))),
+        ("Learning Rate", str(training1.get("lr", "-")), str(training2.get("lr", "-"))),
+        ("Batch Size", str(training1.get("batch_size", "-")),
+         str(training2.get("batch_size", "-"))),
+        ("Quantization", str(training1.get("quantization", "-")),
+         str(training2.get("quantization", "-"))),
     ])
 
     lora1 = training1.get("lora", {})
     lora2 = training2.get("lora", {})
     rows.extend([
-        ("LoRA r", str(lora1.get("r", "—")), str(lora2.get("r", "—"))),
-        ("LoRA alpha", str(lora1.get("alpha", "—")), str(lora2.get("alpha", "—"))),
+        ("LoRA r", str(lora1.get("r", "-")), str(lora2.get("r", "-"))),
+        ("LoRA alpha", str(lora1.get("alpha", "-")), str(lora2.get("alpha", "-"))),
     ])
 
     for label, val1, val2 in rows:
@@ -272,25 +272,25 @@ def delete(
 
 
 def _fmt_loss(run: dict) -> str:
-    """Format loss as 'initial → final'."""
+    """Format loss as 'initial -> final'."""
     init = run.get("initial_loss")
     final = run.get("final_loss")
     if init is not None and final is not None:
-        return f"{init:.4f} → {final:.4f}"
-    return "—"
+        return f"{init:.4f} -> {final:.4f}"
+    return "-"
 
 
 def _fmt_float(val: Optional[float]) -> str:
     """Format a float or return '—'."""
     if val is not None:
         return f"{val:.4f}"
-    return "—"
+    return "-"
 
 
 def _fmt_duration(secs: Optional[float]) -> str:
     """Format duration in seconds to human-readable string."""
     if secs is None:
-        return "—"
+        return "-"
     if secs >= 3600:
         return f"{secs / 3600:.1f}h"
     if secs >= 60:

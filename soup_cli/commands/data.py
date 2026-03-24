@@ -138,7 +138,7 @@ def convert(
         console.print("[red]Cannot convert DPO format (preference pairs are not conversations).[/]")
         raise typer.Exit(1)
 
-    # Convert: source → messages → target
+    # Convert: source -> messages -> target
     converted = []
     failed = 0
     for row in data:
@@ -164,7 +164,7 @@ def convert(
     _write_jsonl(out_path, converted)
 
     console.print(
-        f"[green]Converted {len(converted)} rows:[/] {src_fmt} → {to}\n"
+        f"[green]Converted {len(converted)} rows:[/] {src_fmt} -> {to}\n"
         f"Output: [bold]{out_path}[/]"
     )
     if failed > 0:
@@ -295,7 +295,7 @@ def dedup(
     _write_jsonl(out_path, unique_data)
 
     console.print(
-        f"[green]Dedup complete:[/] {len(data)} → {len(unique_data)} rows "
+        f"[green]Dedup complete:[/] {len(data)} -> {len(unique_data)} rows "
         f"([red]-{removed}[/] duplicates)\n"
         f"Output: [bold]{out_path}[/]"
     )

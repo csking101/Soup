@@ -113,3 +113,18 @@ def model_size_from_name(model_name: str) -> float:
             return size
 
     return 7.0  # default guess
+
+
+def get_compute_dtype():
+    """Return the best compute dtype for the current device.
+
+    Uses bfloat16 on CUDA GPUs that support it, float16 otherwise.
+    On CPU, uses float32 to avoid dtype mismatch errors.
+    """
+    import torch
+
+    if torch.cuda.is_available():
+        if torch.cuda.is_bf16_supported():
+            return torch.bfloat16
+        return torch.float16
+    return torch.float32

@@ -159,12 +159,12 @@ class GRPOTrainerWrapper:
 
         bnb_config = None
         if tcfg.quantization == "4bit":
-            import torch
+            from soup_cli.utils.gpu import get_compute_dtype
 
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_compute_dtype=get_compute_dtype(),
                 bnb_4bit_use_double_quant=True,
             )
         elif tcfg.quantization == "8bit":

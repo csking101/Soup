@@ -138,7 +138,7 @@ def _display_results(results: dict, benchmarks: list[str]) -> None:
     for benchmark in benchmarks:
         bench_data = task_results.get(benchmark, {})
         if not bench_data:
-            table.add_row(benchmark, "—", "[red]not found[/]")
+            table.add_row(benchmark, "-", "[red]not found[/]")
             continue
 
         # Try common metric names
@@ -156,7 +156,7 @@ def _display_results(results: dict, benchmarks: list[str]) -> None:
                     table.add_row(benchmark, metric_name, f"{val:.4f}")
                     break
             else:
-                table.add_row(benchmark, "—", "[yellow]no numeric result[/]")
+                table.add_row(benchmark, "-", "[yellow]no numeric result[/]")
 
     console.print(table)
 

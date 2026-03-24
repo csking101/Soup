@@ -108,17 +108,40 @@ class PPOTrainerWrapper:
         output_dir.mkdir(parents=True, exist_ok=True)
 
         # --- PPO config ---
-        ppo_config = PPOConfig(
-            output_dir=str(output_dir),
-            per_device_train_batch_size=batch_size,
-            gradient_accumulation_steps=tcfg.gradient_accumulation_steps,
-            learning_rate=tcfg.lr,
-            ppo_epochs=tcfg.ppo_epochs,
-            cliprange=tcfg.ppo_clip_ratio,
-            init_kl_coef=tcfg.ppo_kl_penalty,
-            log_with=self.report_to if self.report_to != "none" else None,
-            optimize_cuda_cache=self.device == "cuda",
-        )
+        # Build kwargs, handling trl version differences
+        ppo_kwargs = {
+            "output_dir": str(output_dir),
+            "per_device_train_batch_size": batch_size,
+            "gradient_accumulation_steps": tcfg.gradient_accumulation_steps,
+            "learning_rate": tcfg.lr,
+        }
+
+        # trl renamed ppo_epochs -> num_ppo_epochs in newer versions
+        import inspect
+
+        ppo_params = inspect.signature(PPOConfig).parameters
+        if "num_ppo_epochs" in ppo_params:
+            ppo_kwargs["num_ppo_epochs"] = tcfg.ppo_epochs
+        elif "ppo_epochs" in ppo_params:
+            ppo_kwargs["ppo_epochs"] = tcfg.ppo_epochs
+
+        if "cliprange" in ppo_params:
+            ppo_kwargs["cliprange"] = tcfg.ppo_clip_ratio
+        if "init_kl_coef" in ppo_params:
+            ppo_kwargs["init_kl_coef"] = tcfg.ppo_kl_penalty
+
+        # Optional params that may not exist in all trl versions
+        if "log_with" in ppo_params:
+            ppo_kwargs["log_with"] = (
+                self.report_to if self.report_to != "none" else None
+            )
+        elif "report_to" in ppo_params:
+            ppo_kwargs["report_to"] = self.report_to
+
+        if "optimize_cuda_cache" in ppo_params:
+            ppo_kwargs["optimize_cuda_cache"] = self.device == "cuda"
+
+        ppo_config = PPOConfig(**ppo_kwargs)
 
         # --- Build reward functions list for PPOTrainer ---
         reward_funcs = []
@@ -177,12 +200,12 @@ class PPOTrainerWrapper:
 
         bnb_config = None
         if tcfg.quantization == "4bit":
-            import torch
+            from soup_cli.utils.gpu import get_compute_dtype
 
             bnb_config = BitsAndBytesConfig(
                 load_in_4bit=True,
                 bnb_4bit_quant_type="nf4",
-                bnb_4bit_compute_dtype=torch.bfloat16,
+                bnb_4bit_compute_dtype=get_compute_dtype(),
                 bnb_4bit_use_double_quant=True,
             )
         elif tcfg.quantization == "8bit":

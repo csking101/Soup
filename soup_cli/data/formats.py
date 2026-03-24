@@ -29,7 +29,7 @@ FORMAT_SIGNATURES = {
 def detect_format(data: list[dict]) -> str:
     """Auto-detect dataset format from first few rows."""
     if not data:
-        raise ValueError("Empty dataset — cannot detect format")
+        raise ValueError("Empty dataset - cannot detect format")
 
     sample = data[0]
     keys = set(sample.keys())

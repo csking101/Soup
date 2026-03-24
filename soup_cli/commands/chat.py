@@ -92,9 +92,9 @@ def chat(
     )
 
     console.print("[bold green]Model loaded![/] Type your message. Commands:")
-    console.print("  [dim]/quit[/]  — exit chat")
-    console.print("  [dim]/clear[/] — reset conversation history")
-    console.print("  [dim]/system <text>[/] — set system prompt")
+    console.print("  [dim]/quit[/]  - exit chat")
+    console.print("  [dim]/clear[/] - reset conversation history")
+    console.print("  [dim]/system <text>[/] - set system prompt")
     console.print()
 
     # Chat loop

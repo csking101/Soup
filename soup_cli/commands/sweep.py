@@ -104,7 +104,7 @@ def sweep(
     console.print(param_table)
 
     if dry_run:
-        console.print("[yellow]Dry run — no training will be executed.[/]")
+        console.print("[yellow]Dry run - no training will be executed.[/]")
         raise typer.Exit()
 
     if not yes:
@@ -402,13 +402,13 @@ def _display_summary(results: list[dict], sweep_params: dict[str, list]):
     for idx, res in enumerate(sorted_results):
         status_style = "green" if res["status"] == "completed" else "red"
         param_vals = [str(res["params"].get(k, "")) for k in sweep_params]
-        loss_str = f"{res['final_loss']:.4f}" if res["final_loss"] else "—"
+        loss_str = f"{res['final_loss']:.4f}" if res["final_loss"] else "-"
         best_marker = " [bold yellow]*[/]" if idx == 0 and res["status"] == "completed" else ""
         table.add_row(
             res["name"],
             *param_vals,
             f"{loss_str}{best_marker}",
-            res.get("duration", "—"),
+            res.get("duration", "-"),
             f"[{status_style}]{res['status']}[/]",
         )
 
