@@ -1,12 +1,12 @@
 # Soup CLI — Project CLAUDE.md
 
-Soup is a CLI-first LLM fine-tuning tool (v0.14.0). Python 3.9+, MIT license.
+Soup is a CLI-first LLM fine-tuning tool (v0.14.1). Python 3.9+, MIT license.
 
 ## Build & Development
 
 ```bash
 pip install -e ".[dev]"          # Install editable + test deps
-pytest tests/ -v --tb=short      # Run all tests (1002 tests)
+pytest tests/ -v --tb=short      # Run all tests (1014 tests)
 ruff check soup_cli/ tests/      # Lint (must pass before commit)
 ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
@@ -16,7 +16,7 @@ ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
 soup_cli/
   cli.py              # Entry point, Typer app, all command registration
-  __init__.py          # __version__ = "0.14.0"
+  __init__.py          # __version__ = "0.14.1"
   config/
     schema.py          # Pydantic models (SoupConfig, DataConfig, TrainingConfig, LoraConfig)
     loader.py          # YAML -> SoupConfig, load_config_from_string()
@@ -72,7 +72,7 @@ soup_cli/
     galore.py          # GaLore optimizer config + validation
     moe.py             # MoE model detection, ScatterMoE LoRA target modules
     constants.py       # APP_NAME, paths, default chat template
-tests/                 # 47 test files, 1002 tests
+tests/                 # 47 test files, 1014 tests
 examples/
   configs/             # 7 production-ready YAML examples
   data/                # Sample datasets
@@ -223,7 +223,7 @@ soup version           # Show version (--full for details)
 12. **Tag**: `git tag v0.X.Y && git push origin v0.X.Y`
 13. **Release**: `gh release create v0.X.Y` with changelog (What's New, Install/Upgrade)
 
-## Tests (47 test files, 1002 tests)
+## Tests (47 test files, 1014 tests)
 
 | File | Covers |
 |------|--------|
