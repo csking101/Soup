@@ -749,3 +749,140 @@ output: ./pretrain_output
         assert cfg.data.format == "plaintext"
         assert cfg.data.max_length == 4096
         assert cfg.output == "./pretrain_output"
+
+
+# ─── MoE Integration in _setup_transformers Tests ─────────────────────────
+
+
+class TestPretrainMoEIntegration:
+    """Test MoE-aware setup logic in PretrainTrainerWrapper._setup_transformers."""
+
+    def test_moe_lora_calls_get_moe_target_modules(self):
+        """When moe_lora=True and model is MoE, get_moe_target_modules should be called."""
+        cfg = SoupConfig(
+            base="some-model",
+            task="pretrain",
+            data={"train": "./data.jsonl"},
+            training={"moe_lora": True, "quantization": "none"},
+        )
+
+        mock_model = MagicMock()
+        mock_model.get_nb_trainable_parameters.return_value = (1000, 10000)
+
+        with mock_patch("transformers.AutoModelForCausalLM.from_pretrained",
+                        return_value=mock_model), \
+             mock_patch("transformers.AutoTokenizer.from_pretrained"), \
+             mock_patch("peft.get_peft_model", return_value=mock_model), \
+             mock_patch("peft.LoraConfig"), \
+             mock_patch("peft.prepare_model_for_kbit_training"), \
+             mock_patch(
+                 "soup_cli.utils.moe.detect_moe_model", return_value=True
+             ), \
+             mock_patch(
+                 "soup_cli.utils.moe.get_moe_target_modules",
+                 return_value=["q_proj", "v_proj", "gate_proj", "up_proj"],
+             ) as mock_moe_targets:
+            from soup_cli.trainer.pretrain import PretrainTrainerWrapper
+
+            wrapper = PretrainTrainerWrapper(cfg, device="cpu")
+            wrapper._setup_transformers(cfg, cfg.training)
+
+            mock_moe_targets.assert_called_once_with(mock_model)
+
+    def test_moe_aux_loss_coeff_sets_router_config(self):
+        """When MoE detected and moe_aux_loss_coeff > 0, router config should be set."""
+        cfg = SoupConfig(
+            base="some-model",
+            task="pretrain",
+            data={"train": "./data.jsonl"},
+            training={"moe_aux_loss_coeff": 0.05, "quantization": "none"},
+        )
+
+        mock_model = MagicMock()
+        mock_model.get_nb_trainable_parameters.return_value = (1000, 10000)
+        mock_model.config.router_aux_loss_coef = 0.01
+        mock_model.config.output_router_logits = False
+
+        with mock_patch("transformers.AutoModelForCausalLM.from_pretrained",
+                        return_value=mock_model), \
+             mock_patch("transformers.AutoTokenizer.from_pretrained"), \
+             mock_patch("peft.get_peft_model", return_value=mock_model), \
+             mock_patch("peft.LoraConfig"), \
+             mock_patch("peft.prepare_model_for_kbit_training"), \
+             mock_patch(
+                 "soup_cli.utils.moe.detect_moe_model", return_value=True
+             ), \
+             mock_patch("soup_cli.utils.moe.get_moe_target_modules",
+                        return_value=None):
+            from soup_cli.trainer.pretrain import PretrainTrainerWrapper
+
+            wrapper = PretrainTrainerWrapper(cfg, device="cpu")
+            wrapper._setup_transformers(cfg, cfg.training)
+
+            assert mock_model.config.router_aux_loss_coef == 0.05
+            assert mock_model.config.output_router_logits is True
+
+    def test_moe_lora_non_moe_model_skips_targets(self):
+        """When moe_lora=True but model is not MoE, should fall back to auto."""
+        cfg = SoupConfig(
+            base="some-model",
+            task="pretrain",
+            data={"train": "./data.jsonl"},
+            training={"moe_lora": True, "quantization": "none"},
+        )
+
+        mock_model = MagicMock()
+        mock_model.get_nb_trainable_parameters.return_value = (1000, 10000)
+
+        with mock_patch("transformers.AutoModelForCausalLM.from_pretrained",
+                        return_value=mock_model), \
+             mock_patch("transformers.AutoTokenizer.from_pretrained"), \
+             mock_patch("peft.get_peft_model", return_value=mock_model), \
+             mock_patch("peft.LoraConfig"), \
+             mock_patch("peft.prepare_model_for_kbit_training"), \
+             mock_patch(
+                 "soup_cli.utils.moe.detect_moe_model", return_value=False
+             ), \
+             mock_patch(
+                 "soup_cli.utils.moe.get_moe_target_modules",
+                 return_value=None,
+             ) as mock_moe_targets:
+            from soup_cli.trainer.pretrain import PretrainTrainerWrapper
+
+            wrapper = PretrainTrainerWrapper(cfg, device="cpu")
+            wrapper._setup_transformers(cfg, cfg.training)
+
+            # MoE targets should NOT be called since model is not MoE
+            mock_moe_targets.assert_not_called()
+
+
+# ─── Plaintext Line-level Chunking Test ───────────────────────────────────
+
+
+class TestPlaintextLineChunking:
+    """Verify .txt files use line-level chunking (not paragraph-level)."""
+
+    def test_double_newlines_produce_separate_line_docs(self, tmp_path):
+        """Double newlines are skipped — each non-empty line is a separate doc."""
+        from soup_cli.data.loader import load_raw_data
+
+        txt_file = tmp_path / "corpus.txt"
+        txt_file.write_text(
+            "Para one line one\n\nPara two line one\n", encoding="utf-8"
+        )
+        data = load_raw_data(txt_file)
+        assert len(data) == 2
+        assert data[0] == {"text": "Para one line one"}
+        assert data[1] == {"text": "Para two line one"}
+
+    def test_unicode_text_loading(self, tmp_path):
+        """Unicode content should load correctly."""
+        from soup_cli.data.loader import load_raw_data
+
+        txt_file = tmp_path / "unicode.txt"
+        txt_file.write_text("日本語テスト\n中文测试\nعربي\n", encoding="utf-8")
+        data = load_raw_data(txt_file)
+        assert len(data) == 3
+        assert data[0] == {"text": "日本語テスト"}
+        assert data[1] == {"text": "中文测试"}
+        assert data[2] == {"text": "عربي"}

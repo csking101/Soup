@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from soup_cli.utils.moe import (
     MOE_CONFIG_KEYS,
     MOE_EXPERT_PATTERNS,
@@ -260,3 +262,71 @@ class TestMoEConstants:
         assert "gate_proj" in MOE_EXPERT_PATTERNS
         assert "up_proj" in MOE_EXPERT_PATTERNS
         assert "down_proj" in MOE_EXPERT_PATTERNS
+
+
+# ─── Additional MoE Model Type Detection Tests ───────────────────────────
+
+
+class TestDetectAdditionalMoETypes:
+    """Test detection for all MoE model types listed in moe_types set."""
+
+    def _make_model(self, model_type):
+        model = MagicMock()
+        config = MagicMock()
+        for key in MOE_CONFIG_KEYS:
+            setattr(config, key, None)
+        config.model_type = model_type
+        model.config = config
+        return model
+
+    @pytest.mark.parametrize("model_type", [
+        "jetmoe", "arctic", "grok", "qwen2_moe", "deepseek_v2",
+    ])
+    def test_detect_moe_type(self, model_type):
+        """All listed MoE model types should be detected."""
+        model = self._make_model(model_type)
+        assert detect_moe_model(model) is True
+
+
+# ─── DeepSeek w1/w2/w3 Expert Naming Tests ───────────────────────────────
+
+
+class TestDeepSeekExpertNaming:
+    """Test ScatterMoE LoRA target module discovery for DeepSeek-style naming."""
+
+    def _make_moe_model(self, named_modules):
+        model = MagicMock()
+        config = MagicMock()
+        config.num_local_experts = 8
+        config.model_type = "deepseek_v3"
+        for key in MOE_CONFIG_KEYS:
+            if key != "num_local_experts":
+                setattr(config, key, None)
+        model.config = config
+        model.named_modules.return_value = named_modules
+        return model
+
+    def test_w1_w2_w3_discovered(self):
+        """DeepSeek w1/w2/w3 expert module names should be discovered."""
+        model = self._make_moe_model([
+            ("model.layers.0.self_attn.q_proj", MagicMock()),
+            ("model.layers.0.moe.experts.0.w1", MagicMock()),
+            ("model.layers.0.moe.experts.0.w2", MagicMock()),
+            ("model.layers.0.moe.experts.0.w3", MagicMock()),
+        ])
+        targets = get_moe_target_modules(model)
+        assert "w1" in targets
+        assert "w2" in targets
+        assert "w3" in targets
+
+    def test_w1_w2_w3_combined_with_attention(self):
+        """Expert targets should be combined with standard attention targets."""
+        model = self._make_moe_model([
+            ("model.layers.0.self_attn.q_proj", MagicMock()),
+            ("model.layers.0.moe.experts.0.w1", MagicMock()),
+            ("model.layers.0.moe.experts.0.w2", MagicMock()),
+        ])
+        targets = get_moe_target_modules(model)
+        assert "q_proj" in targets
+        assert "w1" in targets
+        assert "w2" in targets
