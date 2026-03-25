@@ -16,7 +16,7 @@ ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
 soup_cli/
   cli.py              # Entry point, Typer app, all command registration
-  __init__.py          # __version__ = "0.12.0"
+  __init__.py          # __version__ = "0.13.2"
   config/
     schema.py          # Pydantic models (SoupConfig, DataConfig, TrainingConfig, LoraConfig)
     loader.py          # YAML -> SoupConfig, load_config_from_string()
@@ -70,7 +70,7 @@ soup_cli/
     vllm.py            # AsyncLLMEngine backend (2-4x inference throughput)
     galore.py          # GaLore optimizer config + validation
     constants.py       # APP_NAME, paths, default chat template
-tests/                 # 44 test files, 917 tests
+tests/                 # 45 test files, 917 tests
 examples/
   configs/             # 7 production-ready YAML examples
   data/                # Sample datasets
@@ -218,7 +218,7 @@ soup version           # Show version (--full for details)
 12. **Tag**: `git tag v0.X.Y && git push origin v0.X.Y`
 13. **Release**: `gh release create v0.X.Y` with changelog (What's New, Install/Upgrade)
 
-## Tests (44 test files, 917 tests)
+## Tests (45 test files, 917 tests)
 
 | File | Covers |
 |------|--------|
