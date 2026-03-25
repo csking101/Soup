@@ -92,7 +92,7 @@ def train(
     # --- TensorBoard setup ---
     if tensorboard:
         try:
-            from torch.utils.tensorboard import SummaryWriter  # noqa: F401
+            import tensorboard  # noqa: F401
 
             console.print("[green]TensorBoard logging enabled[/]")
         except ImportError:

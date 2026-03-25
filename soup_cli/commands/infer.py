@@ -104,24 +104,28 @@ def infer(
     model_obj, tokenizer = _load_model(str(model_path), base, device)
     console.print("[green]Model loaded.[/]\n")
 
-    # Run inference
+    # Run inference — stream results to disk as they are generated
     output_path = Path(output)
-    results = []
+    total_tokens = 0
+    num_results = 0
     start_time = time.time()
 
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
+    with (
+        open(output_path, "w", encoding="utf-8") as out_f,
+        Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress,
+    ):
         task = progress.add_task("Generating...", total=len(prompts))
 
-        for idx, prompt_text in enumerate(prompts):
+        for prompt_text in prompts:
             messages = [{"role": "user", "content": prompt_text}]
-            response = _generate(
+            response, token_count = _generate(
                 model_obj, tokenizer, messages,
                 max_tokens=max_tokens, temperature=temperature,
             )
@@ -129,25 +133,20 @@ def infer(
             result = {
                 "prompt": prompt_text,
                 "response": response,
-                "tokens_generated": len(tokenizer.encode(response)) if response else 0,
+                "tokens_generated": token_count,
             }
-            results.append(result)
+            out_f.write(json.dumps(result, ensure_ascii=False) + "\n")
+            out_f.flush()
+            total_tokens += token_count
+            num_results += 1
             progress.update(task, advance=1)
 
     elapsed = time.time() - start_time
-
-    # Write results
-    with open(output_path, "w", encoding="utf-8") as f:
-        for row in results:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-    # Summary
-    total_tokens = sum(r["tokens_generated"] for r in results)
     tokens_per_sec = total_tokens / elapsed if elapsed > 0 else 0
 
     console.print(
         Panel(
-            f"Prompts:       [bold]{len(results)}[/]\n"
+            f"Prompts:       [bold]{num_results}[/]\n"
             f"Total tokens:  [bold]{total_tokens}[/]\n"
             f"Duration:      [bold]{elapsed:.1f}s[/]\n"
             f"Throughput:    [bold]{tokens_per_sec:.1f} tok/s[/]\n"
@@ -227,8 +226,10 @@ def _load_model(model_path: str, base_model: Optional[str], device: str):
     return model_obj, tokenizer
 
 
-def _generate(model, tokenizer, messages, max_tokens=256, temperature=0.7) -> str:
-    """Generate a response from the model."""
+def _generate(
+    model, tokenizer, messages, max_tokens=256, temperature=0.7,
+) -> tuple[str, int]:
+    """Generate a response from the model. Returns (text, token_count)."""
     import torch
 
     if hasattr(tokenizer, "apply_chat_template") and tokenizer.chat_template:
@@ -267,4 +268,6 @@ def _generate(model, tokenizer, messages, max_tokens=256, temperature=0.7) -> st
         outputs = model.generate(**gen_kwargs)
 
     new_tokens = outputs[0][input_ids.shape[1]:]
-    return tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+    token_count = new_tokens.shape[0]
+    response_text = tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
+    return response_text, token_count
