@@ -161,9 +161,54 @@ training:
     alpha: 16
 ```
 
-Works with all training tasks: SFT, DPO, GRPO, PPO, KTO, ORPO, SimPO, and IPO. If unsloth is installed but not enabled, Soup will suggest it automatically.
+Works with all training tasks: SFT, DPO, GRPO, PPO, KTO, ORPO, SimPO, IPO, and Pretrain. If unsloth is installed but not enabled, Soup will suggest it automatically.
 
 > **Tip:** Soup auto-detects unsloth. When installed, you'll see a hint during `soup train` if you haven't enabled it yet.
+
+## Continued Pre-training
+
+Continue training a model on raw text for domain adaptation:
+
+```yaml
+base: meta-llama/Llama-3.1-8B
+task: pretrain
+
+data:
+  train: ./data/corpus.jsonl   # {"text": "..."} or plain .txt files
+  format: plaintext
+  max_length: 4096
+
+training:
+  epochs: 1
+  lr: 1e-5
+  quantization: 4bit
+```
+
+```bash
+soup init --template pretrain
+soup train
+```
+
+## MoE Model Support
+
+Fine-tune Mixture of Experts models (Mixtral, Qwen3-30B-A3B, DeepSeek V3) with ScatterMoE LoRA — applies LoRA to both attention layers and expert FFN layers:
+
+```yaml
+base: Qwen/Qwen3-30B-A3B
+task: sft
+
+training:
+  moe_lora: true              # target expert + attention layers
+  moe_aux_loss_coeff: 0.01    # router load-balancing loss
+  quantization: 4bit
+```
+
+Soup auto-detects MoE architectures. Works with all training tasks.
+
+```bash
+soup init --template moe
+soup train
+```
 
 ## Vision / Multimodal Fine-tuning
 
@@ -247,7 +292,7 @@ output: ./output
 - **QAT** (`quantization_aware: true`): Better quality when you plan to deploy with aggressive quantization (int8/int4). ~5-10% slower training, but the model learns to compensate for quantization noise.
 - **Post-training quantization** (default): Faster training, good enough for most use cases. Quantize after training with `soup export --quant q4_k_m`.
 
-QAT works with all training tasks (SFT, DPO, GRPO, PPO, KTO, ORPO, SimPO, IPO) and vision modality. Not compatible with the unsloth backend. After QAT training, export to GGUF normally with `soup export`.
+QAT works with all training tasks (SFT, DPO, GRPO, PPO, KTO, ORPO, SimPO, IPO, Pretrain) and vision modality. Not compatible with the unsloth backend. After QAT training, export to GGUF normally with `soup export`.
 
 ## DPO Training
 
