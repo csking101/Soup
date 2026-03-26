@@ -10,7 +10,7 @@ Requires: liger-kernel >= 0.3.0
 from __future__ import annotations
 
 
-def is_liger_available() -> bool:
+def check_liger_available() -> bool:
     """Check if liger-kernel is installed."""
     try:
         import liger_kernel  # noqa: F401
@@ -44,7 +44,7 @@ def apply_liger_kernel(model_name: str) -> bool:
     Returns:
         True if Liger Kernel was applied, False otherwise.
     """
-    if not is_liger_available():
+    if not check_liger_available():
         return False
 
     model_lower = model_name.lower()
@@ -112,7 +112,7 @@ def validate_liger_config(use_liger: bool, backend: str, device: str) -> list[st
     if not use_liger:
         return errors
 
-    if not is_liger_available():
+    if not check_liger_available():
         errors.append(
             "liger-kernel is not installed. "
             "Install it with: pip install 'soup-cli[liger]'"

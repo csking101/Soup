@@ -54,9 +54,9 @@ FSDP_FULL_SHARD_OFFLOAD = {
 }
 
 FSDP_CONFIGS = {
-    "fsdp_full_shard": FSDP_FULL_SHARD,
-    "fsdp_shard_grad": FSDP_SHARD_GRAD_OP,
-    "fsdp_full_offload": FSDP_FULL_SHARD_OFFLOAD,
+    "full_shard": FSDP_FULL_SHARD,
+    "shard_grad": FSDP_SHARD_GRAD_OP,
+    "full_offload": FSDP_FULL_SHARD_OFFLOAD,
 }
 
 
@@ -64,7 +64,7 @@ def get_fsdp_config(preset: str) -> dict:
     """Get FSDP config dict by preset name.
 
     Args:
-        preset: One of 'fsdp_full_shard', 'fsdp_shard_grad', 'fsdp_full_offload'.
+        preset: One of 'full_shard', 'shard_grad', 'full_offload'.
 
     Returns:
         Deep copy of the FSDP config dict.

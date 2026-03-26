@@ -42,7 +42,7 @@ class TestLigerValidation:
     def test_validate_liger_not_installed(self):
         from soup_cli.utils.liger import validate_liger_config
 
-        with patch("soup_cli.utils.liger.is_liger_available", return_value=False):
+        with patch("soup_cli.utils.liger.check_liger_available", return_value=False):
             errors = validate_liger_config(True, "transformers", "cuda")
             assert any("not installed" in err for err in errors)
 
@@ -61,7 +61,7 @@ class TestLigerValidation:
     def test_validate_liger_valid_config(self):
         from soup_cli.utils.liger import validate_liger_config
 
-        with patch("soup_cli.utils.liger.is_liger_available", return_value=True):
+        with patch("soup_cli.utils.liger.check_liger_available", return_value=True):
             errors = validate_liger_config(True, "transformers", "cuda")
             assert errors == []
 
@@ -69,19 +69,19 @@ class TestLigerValidation:
 class TestLigerDetection:
     """Test Liger Kernel availability detection."""
 
-    def test_is_liger_available_not_installed(self):
-        from soup_cli.utils.liger import is_liger_available
+    def test_check_liger_available_not_installed(self):
+        from soup_cli.utils.liger import check_liger_available
 
         with patch.dict("sys.modules", {"liger_kernel": None}):
             # When import fails, should return False
-            result = is_liger_available()
+            result = check_liger_available()
             # Result depends on actual environment; just verify it's bool
             assert isinstance(result, bool)
 
     def test_get_liger_version_not_installed(self):
         from soup_cli.utils.liger import get_liger_version
 
-        with patch("soup_cli.utils.liger.is_liger_available", return_value=False):
+        with patch("soup_cli.utils.liger.check_liger_available", return_value=False):
             # get_liger_version does its own import attempt
             result = get_liger_version()
             assert result is None or isinstance(result, str)
@@ -89,7 +89,7 @@ class TestLigerDetection:
     def test_apply_liger_kernel_not_available(self):
         from soup_cli.utils.liger import apply_liger_kernel
 
-        with patch("soup_cli.utils.liger.is_liger_available", return_value=False):
+        with patch("soup_cli.utils.liger.check_liger_available", return_value=False):
             result = apply_liger_kernel("meta-llama/Llama-3.1-8B")
             assert result is False
 
@@ -122,8 +122,8 @@ class TestFlashAttnConfig:
 class TestFlashAttnDetection:
     """Test FlashAttention detection and validation."""
 
-    def test_detect_flash_attention_no_cuda(self):
-        with patch("soup_cli.utils.flash_attn.detect_flash_attention") as mock_detect:
+    def test_check_flash_attn_available_no_cuda(self):
+        with patch("soup_cli.utils.flash_attn.check_flash_attn_available") as mock_detect:
             mock_detect.return_value = None
             result = mock_detect()
             assert result is None
@@ -182,20 +182,20 @@ class TestFSDPConfig:
     def test_fsdp_full_shard_preset(self):
         from soup_cli.utils.fsdp import get_fsdp_config
 
-        config = get_fsdp_config("fsdp_full_shard")
+        config = get_fsdp_config("full_shard")
         assert "full_shard" in config["fsdp"]
         assert "auto_wrap" in config["fsdp"]
 
     def test_fsdp_shard_grad_preset(self):
         from soup_cli.utils.fsdp import get_fsdp_config
 
-        config = get_fsdp_config("fsdp_shard_grad")
+        config = get_fsdp_config("shard_grad")
         assert "shard_grad_op" in config["fsdp"]
 
     def test_fsdp_full_offload_preset(self):
         from soup_cli.utils.fsdp import get_fsdp_config
 
-        config = get_fsdp_config("fsdp_full_offload")
+        config = get_fsdp_config("full_offload")
         assert "offload" in config["fsdp"]
 
     def test_fsdp_unknown_preset_raises(self):
@@ -207,7 +207,7 @@ class TestFSDPConfig:
     def test_fsdp_training_args_keys(self):
         from soup_cli.utils.fsdp import get_fsdp_training_args
 
-        kwargs = get_fsdp_training_args("fsdp_full_shard")
+        kwargs = get_fsdp_training_args("full_shard")
         assert "fsdp" in kwargs
         assert "fsdp_config" in kwargs
 
@@ -215,17 +215,17 @@ class TestFSDPConfig:
         """get_fsdp_config should return a deep copy (no shared state)."""
         from soup_cli.utils.fsdp import get_fsdp_config
 
-        config1 = get_fsdp_config("fsdp_full_shard")
-        config2 = get_fsdp_config("fsdp_full_shard")
+        config1 = get_fsdp_config("full_shard")
+        config2 = get_fsdp_config("full_shard")
         config1["fsdp"] = "modified"
         assert config2["fsdp"] != "modified"
 
     def test_fsdp_configs_dict(self):
         from soup_cli.utils.fsdp import FSDP_CONFIGS
 
-        assert "fsdp_full_shard" in FSDP_CONFIGS
-        assert "fsdp_shard_grad" in FSDP_CONFIGS
-        assert "fsdp_full_offload" in FSDP_CONFIGS
+        assert "full_shard" in FSDP_CONFIGS
+        assert "shard_grad" in FSDP_CONFIGS
+        assert "full_offload" in FSDP_CONFIGS
 
 
 class TestFSDPValidation:
@@ -240,19 +240,19 @@ class TestFSDPValidation:
     def test_validate_fsdp_with_deepspeed_conflict(self):
         from soup_cli.utils.fsdp import validate_fsdp_config
 
-        errors = validate_fsdp_config("fsdp_full_shard", "/tmp/ds.json", "transformers", "cuda")
+        errors = validate_fsdp_config("full_shard", "/tmp/ds.json", "transformers", "cuda")
         assert any("DeepSpeed" in err for err in errors)
 
     def test_validate_fsdp_cpu_error(self):
         from soup_cli.utils.fsdp import validate_fsdp_config
 
-        errors = validate_fsdp_config("fsdp_full_shard", None, "transformers", "cpu")
+        errors = validate_fsdp_config("full_shard", None, "transformers", "cpu")
         assert any("CUDA" in err for err in errors)
 
     def test_validate_fsdp_unsloth_error(self):
         from soup_cli.utils.fsdp import validate_fsdp_config
 
-        errors = validate_fsdp_config("fsdp_full_shard", None, "unsloth", "cuda")
+        errors = validate_fsdp_config("full_shard", None, "unsloth", "cuda")
         assert any("unsloth" in err.lower() for err in errors)
 
     def test_validate_fsdp_unknown_preset(self):
@@ -343,10 +343,10 @@ class TestRingAttentionValidation:
         errors = validate_ring_attention_config(True, "cuda", 2048)
         assert any("8192" in err for err in errors)
 
-    def test_is_ring_attention_available_returns_bool(self):
-        from soup_cli.utils.ring_attention import is_ring_attention_available
+    def test_check_ring_attention_available_returns_bool(self):
+        from soup_cli.utils.ring_attention import check_ring_attention_available
 
-        result = is_ring_attention_available()
+        result = check_ring_attention_available()
         assert isinstance(result, bool)
 
     def test_get_ring_attention_version_not_installed(self):
@@ -459,6 +459,22 @@ class TestLongContextUtils:
 
         config = get_rope_scaling_config("linear", 4096, 8192)
         assert config == {}
+
+    def test_get_rope_scaling_config_factor_as_target(self):
+        """When target_length < original_length and > 1.0, treat as factor."""
+        from soup_cli.utils.long_context import get_rope_scaling_config
+
+        config = get_rope_scaling_config("linear", 4.0, 4096)
+        assert config["type"] == "linear"
+        assert config["factor"] == pytest.approx(4.0)
+
+    def test_get_rope_scaling_config_dynamic_factor(self):
+        """Dynamic scaling with factor-style argument."""
+        from soup_cli.utils.long_context import get_rope_scaling_config
+
+        config = get_rope_scaling_config("dynamic", 2.0, 8192)
+        assert config["type"] == "dynamic"
+        assert config["factor"] == pytest.approx(2.0)
 
     def test_get_rope_scaling_config_invalid_type(self):
         from soup_cli.utils.long_context import get_rope_scaling_config

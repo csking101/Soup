@@ -53,14 +53,16 @@ def get_model_default_context(model_name: str) -> int:
 
 def get_rope_scaling_config(
     scaling_type: str,
-    target_length: int,
+    target_length: float,
     original_length: int,
 ) -> dict:
     """Build RoPE scaling configuration for extending context.
 
     Args:
         scaling_type: One of 'linear', 'dynamic', 'yarn', 'longrope'.
-        target_length: Desired context length (e.g., 131072 for 128k).
+        target_length: Desired context length (e.g., 131072 for 128k),
+            or a scaling factor (e.g., 4.0 for 4x extension) when the value
+            is less than original_length and greater than 1.0.
         original_length: Model's pre-trained context length.
 
     Returns:
@@ -75,7 +77,14 @@ def get_rope_scaling_config(
             f"Options: {', '.join(ROPE_SCALING_TYPES)}"
         )
 
-    factor = target_length / original_length
+    # If target_length looks like a scaling factor (small number > 1.0 but < 64),
+    # treat it as a multiplier rather than an absolute token count.
+    # Values >= 64 are always treated as token counts (64 is the schema minimum).
+    if target_length < 64 and target_length > 1.0:
+        factor = float(target_length)
+    else:
+        factor = target_length / original_length
+
     if factor <= 1.0:
         # No scaling needed — target is within original context
         return {}

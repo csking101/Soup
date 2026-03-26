@@ -109,9 +109,9 @@ def serve(
                 "for 2-4x better throughput.[/]"
             )
         else:
-            from soup_cli.utils.sglang import is_sglang_available
+            from soup_cli.utils.sglang import check_sglang_available
 
-            if is_sglang_available():
+            if check_sglang_available():
                 console.print(
                     "[dim]Hint: SGLang is installed. Use [bold]--backend sglang[/] "
                     "for high-throughput serving.[/]"
@@ -130,9 +130,9 @@ def serve(
 
     # Validate SGLang availability
     if backend == "sglang":
-        from soup_cli.utils.sglang import is_sglang_available
+        from soup_cli.utils.sglang import check_sglang_available
 
-        if not is_sglang_available():
+        if not check_sglang_available():
             console.print(
                 "[red]SGLang not installed.[/]\n"
                 "Install with: [bold]pip install 'soup-cli[sglang]'[/]"

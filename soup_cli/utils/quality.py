@@ -89,7 +89,7 @@ def compute_perplexity_scores(
     return scores
 
 
-def compute_coherence_scores(texts: list[str]) -> list[float]:
+def compute_coherence_score(texts: list[str]) -> list[float]:
     """Compute coherence scores for a list of texts.
 
     Coherence is measured by:
@@ -182,7 +182,7 @@ def filter_by_quality(
 
     coherence_scores = None
     if coherence_threshold is not None:
-        coherence_scores = compute_coherence_scores(texts)
+        coherence_scores = compute_coherence_score(texts)
 
     # Filter
     kept = []

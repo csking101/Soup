@@ -6,7 +6,7 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 
-def is_sglang_available() -> bool:
+def check_sglang_available() -> bool:
     """Check if SGLang is installed."""
     try:
         import sglang  # noqa: F401

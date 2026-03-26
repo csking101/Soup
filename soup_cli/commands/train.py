@@ -57,7 +57,7 @@ def train(
     fsdp: str = typer.Option(
         None,
         "--fsdp",
-        help="Enable FSDP2: fsdp_full_shard, fsdp_shard_grad, or fsdp_full_offload",
+        help="Enable FSDP2: full_shard, shard_grad, or full_offload",
     ),
     yes: bool = typer.Option(
         False,

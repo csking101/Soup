@@ -13,7 +13,7 @@ from __future__ import annotations
 FLASH_ATTN_VERSIONS = ("flash_attention_3", "flash_attention_2")
 
 
-def detect_flash_attention() -> str | None:
+def check_flash_attn_available() -> str | None:
     """Detect the best available FlashAttention implementation.
 
     Returns:
@@ -89,7 +89,7 @@ def get_attn_implementation(use_flash_attn: bool, device: str) -> str | None:
     if device != "cuda":
         return None
 
-    return detect_flash_attention()
+    return check_flash_attn_available()
 
 
 def validate_flash_attn_config(
@@ -120,7 +120,7 @@ def validate_flash_attn_config(
             f"Current device: {device}."
         )
 
-    if device == "cuda" and detect_flash_attention() is None:
+    if device == "cuda" and check_flash_attn_available() is None:
         errors.append(
             "FlashAttention is not available. "
             "Install it with: pip install flash-attn --no-build-isolation"

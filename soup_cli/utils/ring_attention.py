@@ -13,7 +13,7 @@ Requires: ring-flash-attn >= 0.1.0 OR transformers >= 4.43.0 (built-in SP suppor
 from __future__ import annotations
 
 
-def is_ring_attention_available() -> bool:
+def check_ring_attention_available() -> bool:
     """Check if Ring FlashAttention is available.
 
     Checks for either:
@@ -94,7 +94,7 @@ def validate_ring_attention_config(
             f"Current device: {device}."
         )
 
-    if not is_ring_attention_available():
+    if not check_ring_attention_available():
         errors.append(
             "Ring FlashAttention is not available. "
             "Install it with: pip install ring-flash-attn"

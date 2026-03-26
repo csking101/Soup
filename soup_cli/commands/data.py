@@ -369,9 +369,9 @@ def filter_data(
             texts.append(" ".join(str(v) for v in row.values() if v))
 
     # Compute coherence scores (lightweight, always computed)
-    from soup_cli.utils.quality import compute_coherence_scores
+    from soup_cli.utils.quality import compute_coherence_score
 
-    coherence_scores = compute_coherence_scores(texts)
+    coherence_scores = compute_coherence_score(texts)
 
     # Compute perplexity scores (requires model, only if requested)
     perplexity_scores = None

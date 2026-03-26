@@ -10,50 +10,50 @@ class TestCoherenceScoring:
 
     def test_empty_text_returns_zero(self):
         """Empty text should have 0 coherence."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
-        scores = compute_coherence_scores([""])
+        scores = compute_coherence_score([""])
         assert scores[0] == 0.0
 
     def test_whitespace_only_returns_zero(self):
         """Whitespace-only text should have 0 coherence."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
-        scores = compute_coherence_scores(["   \n\t  "])
+        scores = compute_coherence_score(["   \n\t  "])
         assert scores[0] == 0.0
 
     def test_short_text_returns_low_score(self):
         """Very short text (< 3 words) should have low coherence."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
-        scores = compute_coherence_scores(["Hi there"])
+        scores = compute_coherence_score(["Hi there"])
         assert scores[0] <= 0.3
 
     def test_coherent_text_returns_high_score(self):
         """Well-formed English text should have high coherence."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
         text = (
             "Python is a versatile programming language. "
             "It is widely used for web development, data analysis, "
             "and machine learning applications."
         )
-        scores = compute_coherence_scores([text])
+        scores = compute_coherence_score([text])
         assert scores[0] > 0.5
 
     def test_repetitive_text_returns_lower_score(self):
         """Highly repetitive text should score lower."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
         normal = "Python is a programming language used for web development."
         repetitive = "the the the the the the the the the the the"
 
-        scores = compute_coherence_scores([normal, repetitive])
+        scores = compute_coherence_score([normal, repetitive])
         assert scores[0] > scores[1]
 
     def test_scores_in_valid_range(self):
         """All coherence scores should be in [0, 1]."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
         texts = [
             "Hello world!",
@@ -61,22 +61,22 @@ class TestCoherenceScoring:
             "asdfghjkl qwerty",
             "a b c d e f g h i j k l m n o p q r s t",
         ]
-        scores = compute_coherence_scores(texts)
+        scores = compute_coherence_score(texts)
         for score in scores:
             assert 0.0 <= score <= 1.0
 
     def test_multiple_texts_scored_independently(self):
         """Each text should get its own score."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
-        scores = compute_coherence_scores(["good text here", "another good text"])
+        scores = compute_coherence_score(["good text here", "another good text"])
         assert len(scores) == 2
 
     def test_empty_list_returns_empty(self):
         """Empty input should return empty output."""
-        from soup_cli.utils.quality import compute_coherence_scores
+        from soup_cli.utils.quality import compute_coherence_score
 
-        scores = compute_coherence_scores([])
+        scores = compute_coherence_score([])
         assert scores == []
 
 

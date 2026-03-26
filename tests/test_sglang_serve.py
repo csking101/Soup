@@ -20,20 +20,20 @@ def _has_fastapi():
 class TestSGLangDetection:
     """Test SGLang availability detection."""
 
-    def test_is_sglang_available_when_installed(self):
-        """is_sglang_available should return True when sglang is importable."""
+    def test_check_sglang_available_when_installed(self):
+        """check_sglang_available should return True when sglang is importable."""
         mock_sglang = MagicMock()
         with mock_patch.dict("sys.modules", {"sglang": mock_sglang}):
-            from soup_cli.utils.sglang import is_sglang_available
+            from soup_cli.utils.sglang import check_sglang_available
 
-            assert is_sglang_available() is True
+            assert check_sglang_available() is True
 
-    def test_is_sglang_available_when_not_installed(self):
-        """is_sglang_available should return False when sglang import fails."""
-        from soup_cli.utils.sglang import is_sglang_available
+    def test_check_sglang_available_when_not_installed(self):
+        """check_sglang_available should return False when sglang import fails."""
+        from soup_cli.utils.sglang import check_sglang_available
 
         # Just verify the function exists and is callable
-        assert callable(is_sglang_available)
+        assert callable(check_sglang_available)
 
     def test_get_sglang_version_when_installed(self):
         """get_sglang_version should return version string."""
@@ -216,7 +216,7 @@ class TestServeSGLangCommand:
 
         runner = CliRunner()
         with mock_patch(
-            "soup_cli.utils.sglang.is_sglang_available", return_value=False
+            "soup_cli.utils.sglang.check_sglang_available", return_value=False
         ):
             result = runner.invoke(app, [
                 "serve",

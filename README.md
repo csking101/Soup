@@ -893,13 +893,13 @@ soup train --config soup.yaml --deepspeed zero3
 soup train --config soup.yaml --deepspeed zero2_offload
 
 # FSDP2 Full Shard (native PyTorch, like ZeRO-3)
-soup train --config soup.yaml --fsdp fsdp_full_shard
+soup train --config soup.yaml --fsdp full_shard
 
 # FSDP2 Shard Grad Op (like ZeRO-2)
-soup train --config soup.yaml --fsdp fsdp_shard_grad
+soup train --config soup.yaml --fsdp shard_grad
 
 # FSDP2 Full Shard with CPU offload
-soup train --config soup.yaml --fsdp fsdp_full_offload
+soup train --config soup.yaml --fsdp full_offload
 ```
 
 ## Performance + Long-Context
@@ -1126,7 +1126,7 @@ soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
 soup init [--template chat|code|...|audio]       Create config
 soup train --config soup.yaml                 Start training
 soup train --config soup.yaml --tensorboard   Train with TensorBoard logging
-soup train --config soup.yaml --fsdp fsdp_full_shard  Train with FSDP2
+soup train --config soup.yaml --fsdp full_shard  Train with FSDP2
 soup infer --model ./output --input p.jsonl   Batch inference
 soup chat --model ./output                    Interactive chat
 soup push --model ./output --repo user/name   Upload to HuggingFace
