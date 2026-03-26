@@ -5,6 +5,15 @@ from unittest.mock import patch as mock_patch
 
 import pytest
 
+
+def _has_fastapi():
+    try:
+        import fastapi  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 # ─── SGLang Detection Tests ──────────────────────────────────────────────
 
 
@@ -112,31 +121,16 @@ class TestSGLangRuntimeCreation:
 # ─── SGLang FastAPI App Tests ────────────────────────────────────────────
 
 
+@pytest.mark.skipif(
+    not _has_fastapi(),
+    reason="fastapi not installed",
+)
 class TestSGLangApp:
-    """Test SGLang FastAPI app creation."""
+    """Test SGLang FastAPI app creation (requires fastapi)."""
 
     def test_create_sglang_app_returns_fastapi(self):
         """create_sglang_app should return a FastAPI application."""
         mock_runtime = MagicMock()
-
-        with mock_patch("fastapi.FastAPI") as mock_fastapi:
-            mock_app = MagicMock()
-            mock_fastapi.return_value = mock_app
-
-            from soup_cli.utils.sglang import create_sglang_app
-
-            app = create_sglang_app(
-                runtime=mock_runtime,
-                runtime_model_name="test-model",
-                model_name="test",
-            )
-
-        assert app is not None
-
-    def test_sglang_app_has_health_endpoint(self):
-        """SGLang app should have /health endpoint."""
-        mock_runtime = MagicMock()
-        mock_runtime.generate.return_value = {"text": "test", "meta_info": {}}
 
         from soup_cli.utils.sglang import create_sglang_app
 
@@ -146,7 +140,20 @@ class TestSGLangApp:
             model_name="test",
         )
 
-        # Check that routes include /health
+        assert app is not None
+
+    def test_sglang_app_has_health_endpoint(self):
+        """SGLang app should have /health endpoint."""
+        mock_runtime = MagicMock()
+
+        from soup_cli.utils.sglang import create_sglang_app
+
+        app = create_sglang_app(
+            runtime=mock_runtime,
+            runtime_model_name="test-model",
+            model_name="test",
+        )
+
         routes = [route.path for route in app.routes]
         assert "/health" in routes
 
@@ -218,8 +225,9 @@ class TestServeSGLangCommand:
             ])
         assert result.exit_code != 0
 
+    @pytest.mark.skipif(not _has_fastapi(), reason="fastapi not installed")
     def test_serve_unknown_backend_shows_error(self, tmp_path):
-        """serve --backend invalid should show error."""
+        """serve --backend invalid should show error listing valid backends."""
         from typer.testing import CliRunner
 
         from soup_cli.cli import app
