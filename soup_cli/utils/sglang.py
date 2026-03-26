@@ -47,7 +47,17 @@ def create_sglang_runtime(
     Returns:
         (runtime, runtime_model_name) tuple.
     """
+    import re
+
     import sglang as sgl
+
+    # SSRF protection: block URL-based model paths
+    for path_val in (model_path, base_model):
+        if path_val and re.match(r'^https?://', path_val):
+            raise ValueError(
+                "model_path/base_model must be a local path or HuggingFace model ID, "
+                "not a URL"
+            )
 
     # For LoRA adapters, load the base model
     if is_adapter and base_model:

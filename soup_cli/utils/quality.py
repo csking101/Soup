@@ -63,7 +63,10 @@ def compute_perplexity_scores(
             shift_labels = input_ids[:, 1:].contiguous()
             shift_mask = attention_mask[:, 1:].contiguous()
 
-            loss_fct = torch.nn.CrossEntropyLoss(reduction="none")
+            # Set pad positions to -100 so CrossEntropyLoss skips them
+            shift_labels = shift_labels.masked_fill(shift_mask == 0, -100)
+
+            loss_fct = torch.nn.CrossEntropyLoss(reduction="none", ignore_index=-100)
             per_token_loss = loss_fct(
                 shift_logits.view(-1, shift_logits.size(-1)),
                 shift_labels.view(-1),
