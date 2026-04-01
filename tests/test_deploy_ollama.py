@@ -85,6 +85,12 @@ def test_validate_model_name_starts_with_hyphen():
     assert "alphanumeric" in err.lower()
 
 
+def test_validate_model_name_exactly_128_chars():
+    valid, err = validate_model_name("a" * 128)
+    assert valid is True
+    assert err == ""
+
+
 # ─── validate_gguf_path ───
 
 
@@ -169,6 +175,15 @@ def test_detect_ollama_no_version_match(mock_run):
     )
     version = detect_ollama()
     assert version == "ollama unknown"
+
+
+@patch(f"{_OLLAMA}.subprocess.run")
+def test_detect_ollama_version_in_stderr(mock_run):
+    mock_run.return_value = MagicMock(
+        returncode=0, stdout="", stderr="ollama version is 0.7.0"
+    )
+    version = detect_ollama()
+    assert version == "0.7.0"
 
 
 # ─── infer_chat_template ───
@@ -315,6 +330,14 @@ def test_deploy_to_ollama_timeout(mock_run):
     assert "timed out" in msg.lower()
 
 
+@patch(f"{_OLLAMA}.subprocess.run")
+def test_deploy_to_ollama_oserror(mock_run):
+    mock_run.side_effect = OSError("Permission denied")
+    success, msg = deploy_to_ollama("test-model", "FROM m.gguf\n")
+    assert success is False
+    assert "failed to run ollama" in msg.lower()
+
+
 # ─── list_soup_models ───
 
 
@@ -350,6 +373,18 @@ def test_list_soup_models_ollama_not_found(mock_run):
     assert list_soup_models() == []
 
 
+@patch(f"{_OLLAMA}.subprocess.run")
+def test_list_soup_models_timeout(mock_run):
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="ollama", timeout=10)
+    assert list_soup_models() == []
+
+
+@patch(f"{_OLLAMA}.subprocess.run")
+def test_list_soup_models_nonzero(mock_run):
+    mock_run.return_value = MagicMock(returncode=1, stdout="")
+    assert list_soup_models() == []
+
+
 # ─── remove_model ───
 
 
@@ -374,6 +409,22 @@ def test_remove_model_not_installed(mock_run):
     success, msg = remove_model("soup-test")
     assert success is False
     assert "not found" in msg.lower()
+
+
+@patch(f"{_OLLAMA}.subprocess.run")
+def test_remove_model_timeout(mock_run):
+    mock_run.side_effect = subprocess.TimeoutExpired(cmd="ollama", timeout=30)
+    success, msg = remove_model("soup-test")
+    assert success is False
+    assert "timed out" in msg.lower()
+
+
+@patch(f"{_OLLAMA}.subprocess.run")
+def test_remove_model_oserror(mock_run):
+    mock_run.side_effect = OSError("Permission denied")
+    success, msg = remove_model("soup-test")
+    assert success is False
+    assert "failed to run ollama" in msg.lower()
 
 
 # ─── Constants ───
