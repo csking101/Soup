@@ -683,12 +683,43 @@ soup export --model ./output --format tensorrt
 soup export --model ./output --format tensorrt --output ./model_trt
 ```
 
-After export, use with Ollama:
+After export, use with Ollama manually or auto-deploy:
 ```bash
+# Manual (3-step)
 echo 'FROM ./my-model.q4_k_m.gguf' > Modelfile
 ollama create my-model -f Modelfile
 ollama run my-model
+
+# Auto-deploy (1-step)
+soup export --model ./output --format gguf --deploy ollama --deploy-name my-model
 ```
+
+### Deploy to Ollama
+
+Deploy a GGUF model directly to your local [Ollama](https://ollama.com/) instance:
+
+```bash
+# Deploy a GGUF model
+soup deploy ollama --model ./output/model.q4_k_m.gguf --name soup-my-model
+
+# Deploy with system prompt and parameters
+soup deploy ollama --model ./model.gguf --name soup-chat \
+  --system "You are a helpful assistant." \
+  --template chatml \
+  --parameter temperature=0.7 \
+  --parameter top_p=0.9
+
+# Export + deploy in one command
+soup export --model ./output --format gguf --deploy ollama
+
+# List Soup-deployed models
+soup deploy ollama --list
+
+# Remove a model
+soup deploy ollama --remove soup-my-model
+```
+
+Auto-detected chat templates: `chatml`, `llama`, `mistral`, `vicuna`, `zephyr` (or `auto` to infer from soup.yaml).
 
 ## Resume Training
 
@@ -1132,8 +1163,12 @@ soup chat --model ./output                    Interactive chat
 soup push --model ./output --repo user/name   Upload to HuggingFace
 soup merge --adapter ./output                 Merge LoRA with base model
 soup export --model ./output --format gguf    Export to GGUF (Ollama)
+soup export --model ./output --deploy ollama  Export GGUF + auto-deploy to Ollama
 soup export --model ./output --format onnx    Export to ONNX
 soup export --model ./output --format tensorrt Export to TensorRT-LLM
+soup deploy ollama --model m.gguf --name x    Deploy GGUF to Ollama
+soup deploy ollama --list                     List Soup-deployed models
+soup deploy ollama --remove <name>            Remove model from Ollama
 soup eval --model ./output --benchmarks mmlu  Evaluate on benchmarks
 soup serve --model ./output --port 8000       OpenAI-compatible API server
 soup serve --model ./output --backend vllm    vLLM backend (2-4x throughput)

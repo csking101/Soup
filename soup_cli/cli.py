@@ -9,6 +9,7 @@ from soup_cli import __version__
 from soup_cli.commands import (
     chat,
     data,
+    deploy,
     diff,
     eval,
     export,
@@ -52,6 +53,10 @@ app.command()(merge.merge)
 app.add_typer(
     data.app, name="data",
     help="Dataset tools: inspect, convert, merge, dedup, validate, stats.",
+)
+app.add_typer(
+    deploy.app, name="deploy",
+    help="Deploy models: Ollama integration (deploy, list, remove).",
 )
 app.add_typer(runs.app, name="runs", help="Experiment tracking: list, show, compare runs.")
 app.command(name="eval")(eval.eval_model)

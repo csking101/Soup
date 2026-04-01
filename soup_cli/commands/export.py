@@ -61,6 +61,16 @@ def export(
         "--onnx-task",
         help="ONNX export task: text-generation (causal LM) or feature-extraction (embedding)",
     ),
+    deploy: Optional[str] = typer.Option(
+        None,
+        "--deploy",
+        help="Auto-deploy after export. Currently supported: ollama",
+    ),
+    deploy_name: Optional[str] = typer.Option(
+        None,
+        "--deploy-name",
+        help="Model name for deployment (used with --deploy)",
+    ),
 ):
     """Export a model to GGUF, ONNX, or TensorRT-LLM format."""
     model_path = Path(model)
@@ -190,6 +200,10 @@ def export(
             title="[bold green]Export Complete![/]",
         )
     )
+
+    # --- Auto-deploy to Ollama if requested ---
+    if deploy:
+        _auto_deploy_ollama(output_path, model_name, deploy, deploy_name)
 
 
 def _detect_base_model(adapter_config_path: Path) -> Optional[str]:
@@ -550,6 +564,55 @@ def _export_tensorrt(model_path: Path, output: Optional[str], base: Optional[str
             title="[bold green]TensorRT-LLM Export Complete![/]",
         )
     )
+
+
+def _auto_deploy_ollama(
+    output_path: Path, model_name: str, deploy_target: str, deploy_name: Optional[str]
+):
+    """Auto-deploy a GGUF file to Ollama after export."""
+    if deploy_target != "ollama":
+        console.print(
+            f"[red]Unsupported deploy target: {deploy_target}[/]\n"
+            "Supported: ollama"
+        )
+        raise typer.Exit(1)
+
+    from soup_cli.utils.ollama import (
+        create_modelfile,
+        deploy_to_ollama,
+        detect_ollama,
+        validate_model_name,
+    )
+
+    ollama_name = deploy_name or f"soup-{model_name}"
+
+    valid, err = validate_model_name(ollama_name)
+    if not valid:
+        console.print(f"[red]Invalid deploy name:[/] {err}")
+        raise typer.Exit(1)
+
+    version = detect_ollama()
+    if not version:
+        console.print(
+            "[red]Ollama not found — skipping deploy.[/]\n"
+            "Install from: [bold]https://ollama.com[/]"
+        )
+        raise typer.Exit(1)
+
+    console.print(f"\n[green]✓[/] Ollama v{version} detected — deploying as [bold]{ollama_name}[/]")
+    console.print(
+        "[yellow]Warning:[/] This will overwrite any existing Ollama model "
+        f"named '{ollama_name}'."
+    )
+
+    modelfile = create_modelfile(gguf_path=output_path, template="chatml")
+    success, message = deploy_to_ollama(ollama_name, modelfile)
+    if not success:
+        console.print(f"[red]Deploy failed:[/] {message}")
+        raise typer.Exit(1)
+
+    console.print(f"[green]✓[/] Deployed to Ollama: [bold]{ollama_name}[/]")
+    console.print(f"Run: [bold]ollama run {ollama_name}[/]")
 
 
 def _format_size(size_bytes: int) -> str:

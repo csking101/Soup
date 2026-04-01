@@ -1,12 +1,12 @@
 # Soup CLI — Project CLAUDE.md
 
-Soup is a CLI-first LLM fine-tuning tool (v0.17.3). Python 3.9+, MIT license.
+Soup is a CLI-first LLM fine-tuning tool (v0.18.0). Python 3.9+, MIT license.
 
 ## Build & Development
 
 ```bash
 pip install -e ".[dev]"          # Install editable + test deps
-pytest tests/ -v --tb=short      # Run all tests (1348 tests)
+pytest tests/ -v --tb=short      # Run all tests (1449 tests)
 ruff check soup_cli/ tests/      # Lint (must pass before commit)
 ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
@@ -16,7 +16,7 @@ ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
 soup_cli/
   cli.py              # Entry point, Typer app, all command registration
-  __init__.py          # __version__ = "0.17.3"
+  __init__.py          # __version__ = "0.18.0"
   config/
     schema.py          # Pydantic models (SoupConfig, DataConfig, TrainingConfig, LoraConfig)
     loader.py          # YAML -> SoupConfig, load_config_from_string()
@@ -47,6 +47,7 @@ soup_cli/
     tracker.py         # SQLite at ~/.soup/experiments.db (runs, metrics, eval_results)
   commands/
     train.py           # soup train (routes to SFT/DPO/GRPO/PPO/Reward/KTO/ORPO/SimPO/IPO)
+    deploy.py          # soup deploy ollama (deploy GGUF to Ollama)
     init.py            # soup init (interactive wizard + 10 templates)
     chat.py            # soup chat (terminal REPL)
     serve.py           # soup serve (OpenAI-compatible API, transformers/vllm backends)
@@ -82,6 +83,7 @@ soup_cli/
     long_context.py    # RoPE scaling for 128k+ context fine-tuning
     quality.py         # Perplexity + coherence scoring for data quality filters
     sglang.py          # SGLang runtime backend (high-throughput serving)
+    ollama.py          # Ollama integration (detect, deploy, list, remove, Modelfile gen)
     constants.py       # APP_NAME, paths, default chat template
 tests/                 # 56 test files, 1348 tests
 examples/
@@ -98,6 +100,10 @@ soup infer             # Batch inference (--model, --input, --output)
 soup chat              # Terminal chat with model
 soup serve             # OpenAI-compatible inference server (--backend transformers|vllm|sglang, --speculative-decoding)
 soup export            # Convert to GGUF/ONNX/TensorRT for deployment
+soup export --deploy ollama  # Export GGUF + auto-deploy to Ollama
+soup deploy ollama     # Deploy GGUF model to local Ollama instance
+soup deploy ollama --list    # List Soup-deployed models in Ollama
+soup deploy ollama --remove  # Remove model from Ollama
 soup merge             # Merge LoRA adapter with base model
 soup push              # Upload to HuggingFace Hub
 soup eval              # Run benchmarks (mmlu, gsm8k, etc.)
@@ -192,6 +198,12 @@ soup version           # Show version (--full for details)
 - **Audio model**: trust_remote_code warning panel before loading audio models (v0.17.0)
 - **Audio paths**: path traversal protection — resolved paths confined to audio_dir (v0.17.0)
 - **SGLang**: trust_remote_code warning panel before runtime creation (v0.17.0)
+- **Ollama deploy**: GGUF path traversal protection + `.gguf` extension validation (v0.18.0)
+- **Ollama deploy**: model name validation — no path separators or null bytes (v0.18.0)
+- **Ollama deploy**: subprocess calls use list args (no shell injection) (v0.18.0)
+- **Ollama deploy**: Modelfile parameter key allowlist prevents directive injection (v0.18.0)
+- **Ollama deploy**: parameter value newline/null sanitization prevents Modelfile injection (v0.18.0)
+- **Ollama deploy**: warning panel before `ollama create` (overwrites existing model) (v0.18.0)
 
 ## Code Conventions
 
@@ -261,7 +273,7 @@ soup version           # Show version (--full for details)
 15. **Tag**: `git tag v0.X.Y && git push origin v0.X.Y`
 16. **Release**: `gh release create v0.X.Y` with changelog (What's New, Install/Upgrade)
 
-## Tests (56 test files, 1348 tests)
+## Tests (57 test files, 1449 tests)
 
 | File | Covers |
 |------|--------|
@@ -320,3 +332,4 @@ soup version           # Show version (--full for details)
 | test_quality_filter.py | Perplexity + coherence scoring, `soup data filter` |
 | test_audio.py | Audio modality config, format, template, routing, loader |
 | test_sglang_serve.py | SGLang backend detection, runtime creation, serve --backend |
+| test_deploy_ollama.py | Ollama deploy, Modelfile gen, template mapping, security validation |
