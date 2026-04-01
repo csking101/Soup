@@ -1138,17 +1138,55 @@ soup runs delete run_1
 
 ## Model Evaluation
 
-Evaluate models on standard benchmarks using [lm-evaluation-harness](https://github.com/EleutherAI/lm-evaluation-harness):
+Full-featured evaluation platform with standard benchmarks, custom evals, LLM-as-a-judge, and human evaluation:
 
 ```bash
 # Install eval dependencies
 pip install 'soup-cli[eval]'
 
-# Evaluate on benchmarks
-soup eval --model ./output --benchmarks mmlu,gsm8k,hellaswag
+# Standard benchmarks (wraps lm-evaluation-harness)
+soup eval benchmark --model ./output --benchmarks mmlu,gsm8k,hellaswag
 
-# Link results to a training run
-soup eval --model ./output --benchmarks mmlu --run-id run_20260223_143052_a1b2
+# Custom eval tasks from JSONL
+soup eval custom --tasks eval_tasks.jsonl --model ./output
+
+# LLM-as-a-judge (score model outputs using GPT-4o, Ollama, etc.)
+soup eval judge --target responses.jsonl --model gpt-4o-mini --provider openai
+soup eval judge --target responses.jsonl --model llama3.1 --provider ollama
+
+# Auto-eval after training (configure in soup.yaml)
+soup eval auto --config soup.yaml
+
+# Compare eval results between two training runs
+soup eval compare run_20260301_143052_a1b2 run_20260315_091023_c3d4
+
+# Local leaderboard across all evaluated models
+soup eval leaderboard
+soup eval leaderboard --format json
+soup eval leaderboard --format csv
+
+# Human A/B evaluation with Elo ratings
+soup eval human --input prompts.jsonl --model-a ./model_a --model-b ./model_b
+```
+
+### Custom Eval Format
+
+```jsonl
+{"prompt": "What is 2+2?", "expected": "4", "category": "math", "scoring": "exact"}
+{"prompt": "Explain gravity", "expected": "force.*attraction", "scoring": "regex"}
+{"prompt": "Capital of France?", "expected": "Paris", "scoring": "contains"}
+```
+
+### Auto-Eval Config (soup.yaml)
+
+```yaml
+eval:
+  auto_eval: true
+  benchmarks: [mmlu, gsm8k]
+  custom_tasks: eval_tasks.jsonl
+  judge:
+    model: gpt-4o-mini
+    provider: openai
 ```
 
 ## All Commands
@@ -1169,7 +1207,13 @@ soup export --model ./output --format tensorrt Export to TensorRT-LLM
 soup deploy ollama --model m.gguf --name x    Deploy GGUF to Ollama
 soup deploy ollama --list                     List Soup-deployed models
 soup deploy ollama --remove <name>            Remove model from Ollama
-soup eval --model ./output --benchmarks mmlu  Evaluate on benchmarks
+soup eval benchmark --model ./output          Evaluate on standard benchmarks
+soup eval custom --tasks eval.jsonl           Custom eval tasks from JSONL
+soup eval judge --target resp.jsonl           LLM-as-a-judge evaluation
+soup eval auto --config soup.yaml             Auto-eval from config
+soup eval compare <run1> <run2>               Compare eval results
+soup eval leaderboard                         Local model leaderboard
+soup eval human --input p.jsonl               Human A/B evaluation
 soup serve --model ./output --port 8000       OpenAI-compatible API server
 soup serve --model ./output --backend vllm    vLLM backend (2-4x throughput)
 soup serve --model ./output --backend sglang  SGLang backend

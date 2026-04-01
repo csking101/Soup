@@ -189,6 +189,27 @@ class TrainingConfig(BaseModel):
     )
 
 
+class EvalConfig(BaseModel):
+    """Evaluation configuration for auto-eval after training."""
+
+    auto_eval: bool = Field(
+        default=False,
+        description="Run evaluation automatically after training completes",
+    )
+    benchmarks: Optional[List[str]] = Field(
+        default=None,
+        description="lm-evaluation-harness benchmark names to run",
+    )
+    custom_tasks: Optional[str] = Field(
+        default=None,
+        description="Path to custom eval JSONL file",
+    )
+    judge: Optional[dict] = Field(
+        default=None,
+        description="LLM-as-a-judge config: model, rubric, provider",
+    )
+
+
 class SoupConfig(BaseModel):
     """Root config for soup.yaml."""
 
@@ -211,6 +232,10 @@ class SoupConfig(BaseModel):
     training: TrainingConfig = Field(default_factory=TrainingConfig)
     output: str = Field(default="./output", description="Output directory for trained model")
     experiment_name: Optional[str] = Field(default=None, description="Experiment name for tracking")
+    eval: Optional[EvalConfig] = Field(
+        default=None,
+        description="Evaluation configuration for auto-eval after training",
+    )
 
     @field_validator("experiment_name")
     @classmethod

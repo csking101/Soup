@@ -59,7 +59,10 @@ app.add_typer(
     help="Deploy models: Ollama integration (deploy, list, remove).",
 )
 app.add_typer(runs.app, name="runs", help="Experiment tracking: list, show, compare runs.")
-app.command(name="eval")(eval.eval_model)
+app.add_typer(
+    eval.app, name="eval",
+    help="Evaluate models: benchmarks, custom evals, LLM judge, leaderboard.",
+)
 app.command()(serve.serve)
 app.command()(sweep.sweep)
 app.command(name="diff")(diff.diff)

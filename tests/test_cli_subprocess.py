@@ -531,7 +531,7 @@ class TestEvalCommand:
         assert result.returncode == 0
 
     def test_eval_missing_model(self):
-        result = run_soup("eval", "--model", "nonexistent_model")
+        result = run_soup("eval", "benchmark", "--model", "nonexistent_model")
         assert result.returncode == 1
 
 

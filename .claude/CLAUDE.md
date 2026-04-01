@@ -1,12 +1,12 @@
 # Soup CLI — Project CLAUDE.md
 
-Soup is a CLI-first LLM fine-tuning tool (v0.18.2). Python 3.9+, MIT license.
+Soup is a CLI-first LLM fine-tuning tool (v0.19.0). Python 3.9+, MIT license.
 
 ## Build & Development
 
 ```bash
 pip install -e ".[dev]"          # Install editable + test deps
-pytest tests/ -v --tb=short      # Run all tests (1449 tests)
+pytest tests/ -v --tb=short      # Run all tests (1577 tests)
 ruff check soup_cli/ tests/      # Lint (must pass before commit)
 ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
@@ -16,9 +16,9 @@ ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
 soup_cli/
   cli.py              # Entry point, Typer app, all command registration
-  __init__.py          # __version__ = "0.18.2"
+  __init__.py          # __version__ = "0.19.0"
   config/
-    schema.py          # Pydantic models (SoupConfig, DataConfig, TrainingConfig, LoraConfig)
+    schema.py          # Pydantic models (SoupConfig, DataConfig, TrainingConfig, LoraConfig, EvalConfig)
     loader.py          # YAML -> SoupConfig, load_config_from_string()
   data/
     loader.py          # Local files (JSONL/JSON/CSV/Parquet) + HF datasets
@@ -43,6 +43,11 @@ soup_cli/
   monitoring/
     callback.py        # HF TrainerCallback -> Rich display + SQLite tracker
     display.py         # Rich Live terminal dashboard (2Hz refresh)
+  eval/
+    custom.py          # Custom eval task runner (JSONL tasks, scoring functions)
+    judge.py           # LLM-as-a-judge evaluator (OpenAI/Ollama/server backends)
+    human.py           # Human evaluation (A/B comparison, Elo ratings)
+    leaderboard.py     # Leaderboard aggregation, run comparison, export
   experiment/
     tracker.py         # SQLite at ~/.soup/experiments.db (runs, metrics, eval_results)
   commands/
@@ -54,7 +59,7 @@ soup_cli/
     export.py          # soup export (GGUF conversion via llama.cpp)
     merge.py           # soup merge (LoRA + base -> full model)
     push.py            # soup push (HuggingFace Hub upload)
-    eval.py            # soup eval (lm-evaluation-harness wrapper)
+    eval.py            # soup eval (benchmark, custom, judge, compare, leaderboard, human, auto)
     data.py            # soup data (inspect/validate/convert/merge/dedup/stats)
     generate.py        # soup data generate (synthetic data via LLM APIs)
     infer.py           # soup infer (batch inference on JSONL prompts)
@@ -85,7 +90,7 @@ soup_cli/
     sglang.py          # SGLang runtime backend (high-throughput serving)
     ollama.py          # Ollama integration (detect, deploy, list, remove, Modelfile gen)
     constants.py       # APP_NAME, paths, default chat template
-tests/                 # 56 test files, 1348 tests
+tests/                 # 58 test files, 1577 tests
 examples/
   configs/             # 7 production-ready YAML examples
   data/                # Sample datasets
@@ -106,7 +111,13 @@ soup deploy ollama --list    # List Soup-deployed models in Ollama
 soup deploy ollama --remove  # Remove model from Ollama
 soup merge             # Merge LoRA adapter with base model
 soup push              # Upload to HuggingFace Hub
-soup eval              # Run benchmarks (mmlu, gsm8k, etc.)
+soup eval benchmark    # Run benchmarks (mmlu, gsm8k, etc.)
+soup eval custom       # Run custom eval tasks from JSONL
+soup eval judge        # LLM-as-a-judge evaluation
+soup eval auto         # Auto-eval from soup.yaml config
+soup eval compare      # Compare eval results between runs
+soup eval leaderboard  # Local leaderboard across models
+soup eval human        # Human A/B evaluation with Elo ratings
 soup data inspect      # Dataset stats + sample rows
 soup data validate     # Format compliance check
 soup data convert      # Transform between alpaca/sharegpt/chatml
@@ -131,7 +142,8 @@ soup version           # Show version (--full for details)
 
 `config/schema.py` is the single source of truth. Pydantic v2 models:
 
-- **SoupConfig**: base (required), task (sft/dpo/kto/orpo/simpo/ipo/grpo/ppo/reward_model/pretrain/embedding), modality (text/vision/audio), backend (transformers/unsloth), data, training, output
+- **SoupConfig**: base (required), task (sft/dpo/kto/orpo/simpo/ipo/grpo/ppo/reward_model/pretrain/embedding), modality (text/vision/audio), backend (transformers/unsloth), data, training, output, eval
+- **EvalConfig**: auto_eval, benchmarks, custom_tasks, judge
 - **DataConfig**: train, format (alpaca/sharegpt/chatml/dpo/kto/llava/sharegpt4v/plaintext/embedding/audio/auto), val_split, max_length, image_dir, audio_dir
 - **TrainingConfig**: epochs, lr, batch_size (int or "auto"), quantization (4bit/8bit/none), quantization_aware, optimizer, scheduler, dpo_beta, kto_beta, orpo_beta, simpo_gamma, cpo_alpha, ipo_tau, grpo_beta, num_generations, reward_fn, ppo_epochs, ppo_clip_ratio, ppo_kl_penalty, reward_model, loraplus_lr_ratio, use_galore, galore_rank, galore_update_proj_gap, galore_scale, moe_lora, moe_aux_loss_coeff, use_liger, use_flash_attn, use_ring_attention, rope_scaling_type, gradient_checkpointing, embedding_loss, embedding_margin, embedding_pooling, embedding_temperature
 - **LoraConfig**: r, alpha, dropout, target_modules, use_dora
@@ -204,6 +216,13 @@ soup version           # Show version (--full for details)
 - **Ollama deploy**: Modelfile parameter key allowlist prevents directive injection (v0.18.0)
 - **Ollama deploy**: parameter value newline/null sanitization prevents Modelfile injection (v0.18.0)
 - **Ollama deploy**: warning panel before `ollama create` (overwrites existing model) (v0.18.0)
+- **Custom eval**: JSONL schema validation, capped at 10k tasks (v0.19.0)
+- **Custom eval**: regex scoring ReDoS guard — pattern + input length caps (v0.19.0)
+- **Judge eval**: SSRF protection on `--api-base` (localhost-only HTTP) (v0.19.0)
+- **Judge eval**: API key isolation — OpenAI key not leaked to non-OpenAI providers (v0.19.0)
+- **Human eval**: local-only terminal UI, no network access (v0.19.0)
+- **Human eval**: prompts file capped at 10k entries (v0.19.0)
+- **Leaderboard**: read-only SQLite queries, no user input in SQL (v0.19.0)
 
 ## Code Conventions
 
@@ -273,7 +292,7 @@ soup version           # Show version (--full for details)
 15. **Tag**: `git tag v0.X.Y && git push origin v0.X.Y`
 16. **Release**: `gh release create v0.X.Y` with changelog (What's New, Install/Upgrade)
 
-## Tests (57 test files, 1457 tests)
+## Tests (58 test files, 1577 tests)
 
 | File | Covers |
 |------|--------|
@@ -333,3 +352,4 @@ soup version           # Show version (--full for details)
 | test_audio.py | Audio modality config, format, template, routing, loader |
 | test_sglang_serve.py | SGLang backend detection, runtime creation, serve --backend |
 | test_deploy_ollama.py | Ollama deploy, Modelfile gen, template mapping, security validation |
+| test_eval_platform.py | Custom eval, judge, human eval (Elo), leaderboard, compare, auto-eval, security |

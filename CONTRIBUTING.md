@@ -95,10 +95,11 @@ soup_cli/
   trainer/            - Training wrappers (SFT, DPO, GRPO, PPO, KTO, ORPO, SimPO, IPO, Pretrain, Reward Model, Embedding)
   monitoring/         - Callbacks and live dashboard
   experiment/         - SQLite experiment tracking
+  eval/               - Eval platform (custom tasks, LLM judge, human eval, leaderboard)
   utils/              - GPU, errors, MoE, GaLore, QAT, Unsloth, vLLM, SGLang, Liger, FlashAttn, FSDP, Ring Attention, long-context, quality
   ui/                 - Web UI (FastAPI + HTML/JS SPA)
 
-tests/                - Test suite (56 files, 1348 tests)
+tests/                - Test suite (58 files, 1585 tests)
 examples/             - Real-world config examples and datasets
 ```
 

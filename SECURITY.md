@@ -4,14 +4,14 @@
 
 We provide security updates for the following versions:
 
-- **Latest minor version:** Active support (e.g., v0.18.x)
+- **Latest minor version:** Active support (e.g., v0.19.x)
 - **Previous minor versions:** Bug-fix support only
 - **Versions older than 3 minor versions:** No support
 
 Example:
-- v0.18.0-0.18.x → Full support (latest)
-- v0.17.0-0.17.x → Bug-fix support only
-- v0.16.x and below → No support
+- v0.19.0-0.19.x → Full support (latest)
+- v0.18.0-0.18.x → Bug-fix support only
+- v0.17.x and below → No support
 
 ## Reporting a Vulnerability
 
