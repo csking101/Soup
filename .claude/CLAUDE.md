@@ -1,6 +1,6 @@
 # Soup CLI — Project CLAUDE.md
 
-Soup is a CLI-first LLM fine-tuning tool (v0.20.1). Python 3.9+, MIT license.
+Soup is a CLI-first LLM fine-tuning tool (v0.20.2). Python 3.9+, MIT license.
 
 ## Build & Development
 
