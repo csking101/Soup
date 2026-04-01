@@ -102,6 +102,6 @@ def generate_vllm(
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"Unexpected vLLM response format: {exc}") from exc
 
-    from soup_cli.commands.generate import _parse_json_array
+    from soup_cli.data.providers._utils import parse_json_array
 
-    return _parse_json_array(content)
+    return parse_json_array(content)

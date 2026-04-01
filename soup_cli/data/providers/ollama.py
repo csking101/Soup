@@ -30,11 +30,11 @@ def detect_ollama(base_url: str = DEFAULT_OLLAMA_BASE) -> Optional[str]:
                 ver_response = httpx.get(f"{base_url}/api/version", timeout=5.0)
                 if ver_response.status_code == 200:
                     return ver_response.json().get("version", "unknown")
-            except Exception:
-                pass
+            except (httpx.HTTPError, KeyError, ValueError):
+                logger.debug("Ollama version check failed", exc_info=True)
             return "unknown"
-    except Exception:
-        pass
+    except (httpx.HTTPError, OSError):
+        logger.debug("Ollama not reachable at %s", base_url, exc_info=True)
     return None
 
 
@@ -118,6 +118,6 @@ def generate_ollama(
     except (KeyError, IndexError, TypeError) as exc:
         raise ValueError(f"Unexpected Ollama response format: {exc}") from exc
 
-    from soup_cli.commands.generate import _parse_json_array
+    from soup_cli.data.providers._utils import parse_json_array
 
-    return _parse_json_array(content)
+    return parse_json_array(content)

@@ -853,44 +853,14 @@ def _generate_server(
 
 
 def _parse_json_array(content: str) -> list[dict]:
-    """Parse a JSON array from LLM output, handling markdown code blocks."""
-    content = content.strip()
+    """Parse a JSON array from LLM output, handling markdown code blocks.
 
-    # Strip markdown code fences
-    if content.startswith("```"):
-        lines = content.split("\n")
-        # Remove first line (```json or ```)
-        lines = lines[1:]
-        # Remove last line if it's ```)
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        content = "\n".join(lines).strip()
+    Delegates to soup_cli.data.providers._utils.parse_json_array to avoid
+    circular imports (providers import this, this imports providers).
+    """
+    from soup_cli.data.providers._utils import parse_json_array
 
-    # Try to find JSON array in content
-    start = content.find("[")
-    end = content.rfind("]")
-    if start != -1 and end != -1 and end > start:
-        content = content[start:end + 1]
-
-    try:
-        result = json.loads(content)
-        if isinstance(result, list):
-            return [item for item in result if isinstance(item, dict)]
-    except json.JSONDecodeError:
-        pass
-
-    # Try line-by-line JSON objects
-    results = []
-    for line in content.split("\n"):
-        line = line.strip()
-        if line.startswith("{"):
-            try:
-                obj = json.loads(line)
-                if isinstance(obj, dict):
-                    results.append(obj)
-            except json.JSONDecodeError:
-                continue
-    return results
+    return parse_json_array(content)
 
 
 def _validate_example(example: dict, fmt: str) -> bool:

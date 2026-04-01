@@ -139,7 +139,7 @@ class TestOllamaProvider:
         """detect_ollama should return None when Ollama is not running."""
         from soup_cli.data.providers.ollama import detect_ollama
 
-        with mock_patch("httpx.get", side_effect=Exception("connection refused")):
+        with mock_patch("httpx.get", side_effect=OSError("connection refused")):
             version = detect_ollama()
         assert version is None
 
@@ -151,10 +151,7 @@ class TestOllamaProvider:
         mock_tags.status_code = 200
         mock_tags.json.return_value = {"models": []}
 
-        mock_ver = MagicMock()
-        mock_ver.status_code = 500
-
-        with mock_patch("httpx.get", side_effect=[mock_tags, Exception("fail")]):
+        with mock_patch("httpx.get", side_effect=[mock_tags, ValueError("fail")]):
             version = detect_ollama()
         assert version == "unknown"
 
