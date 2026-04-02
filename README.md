@@ -972,7 +972,7 @@ Automatically maps model, LoRA, training params, quantization, and task type. Wa
 
 ## Ready-Made Recipes
 
-30 pre-built configs for popular models — no guessing hyperparameters:
+29 pre-built configs for popular models — no guessing hyperparameters:
 
 ```bash
 # List all recipes
@@ -1353,7 +1353,7 @@ soup migrate --from llamafactory config.yaml  Import config from LLaMA-Factory
 soup migrate --from axolotl config.yml        Import config from Axolotl
 soup migrate --from unsloth notebook.ipynb    Import config from Unsloth notebook
 soup migrate --from llamafactory c.yaml --dry-run  Preview without writing
-soup recipes list                             List all 30 ready-made recipes
+soup recipes list                             List all 29 ready-made recipes
 soup recipes show llama3.1-8b-sft            Print recipe YAML
 soup recipes use llama3.1-8b-sft             Copy recipe to soup.yaml
 soup recipes search "reasoning"              Search by keyword/task/size

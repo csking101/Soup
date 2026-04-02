@@ -1,6 +1,6 @@
 # Soup CLI — Project CLAUDE.md
 
-Soup is a CLI-first LLM fine-tuning tool (v0.21.0). Python 3.9+, MIT license.
+Soup is a CLI-first LLM fine-tuning tool (v0.21.1). Python 3.9+, MIT license.
 
 ## Build & Development
 
@@ -66,7 +66,7 @@ soup_cli/
     axolotl.py         # Axolotl YAML → SoupConfig migration
     unsloth.py         # Unsloth .ipynb → SoupConfig migration (AST-only, no exec)
   recipes/
-    catalog.py         # 30 ready-made RecipeMeta configs for popular models
+    catalog.py         # 29 ready-made RecipeMeta configs for popular models
   commands/
     train.py           # soup train (routes to SFT/DPO/GRPO/PPO/Reward/KTO/ORPO/SimPO/IPO)
     deploy.py          # soup deploy ollama (deploy GGUF to Ollama)
@@ -173,7 +173,7 @@ soup version           # Show version (--full for details)
 - **LoraConfig**: r, alpha, dropout, target_modules, use_dora, use_rslora
 
 15 built-in templates: chat, code, medical, reasoning, vision, audio, kto, orpo, simpo, ipo, embedding, rlhf, pretrain, moe, longcontext.
-30 ready-made recipes via `soup recipes` (Llama 3.1/3.2, Qwen 2.5/3, Mistral, Gemma 3, Phi-4, DeepSeek R1).
+29 ready-made recipes via `soup recipes` (Llama 3.1/3.2, Qwen 2.5/3, Mistral, Gemma 3, Phi-4, DeepSeek R1).
 
 ## Training Tasks
 

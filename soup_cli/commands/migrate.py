@@ -91,7 +91,7 @@ def migrate(
     migration_warnings = result.get("_warnings", [])
     if migration_warnings:
         from rich.markup import escape
-        warning_text = "\n".join(f"  \u26a0 {escape(w)}" for w in migration_warnings)
+        warning_text = "\n".join(f"  [yellow]![/] {escape(w)}" for w in migration_warnings)
         console.print(Panel(
             warning_text,
             title="[yellow]Migration Warnings[/]",
