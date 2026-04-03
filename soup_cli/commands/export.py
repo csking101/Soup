@@ -709,6 +709,13 @@ def _export_awq(
     )
 
     try:
+        console.print(
+            Panel(
+                "[yellow]Warning:[/] Loading model with trust_remote_code=True.\n"
+                "This may execute custom code from the model directory.",
+                title="Security Notice",
+            )
+        )
         console.print("[dim]Loading model for AWQ quantization...[/]")
         model = AutoAWQForCausalLM.from_pretrained(str(source_path))
         tokenizer = AutoTokenizer.from_pretrained(str(source_path), trust_remote_code=True)
@@ -817,6 +824,13 @@ def _export_gptq(
     )
 
     try:
+        console.print(
+            Panel(
+                "[yellow]Warning:[/] Loading model with trust_remote_code=True.\n"
+                "This may execute custom code from the model directory.",
+                title="Security Notice",
+            )
+        )
         console.print("[dim]Loading model for GPTQ quantization...[/]")
         quantize_config = BaseQuantizeConfig(
             bits=bits,

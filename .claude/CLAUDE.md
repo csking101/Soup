@@ -275,6 +275,8 @@ soup version           # Show version (--full for details)
 - **AWQ/GPTQ export**: calibration data path traversal protection — resolve + relative_to(cwd) (v0.23.0)
 - **AWQ/GPTQ export**: output path stays under cwd (v0.23.0)
 - **Curriculum config**: curriculum_buckets bounded ge=1, le=20 (v0.23.0)
+- **AWQ/GPTQ export**: trust_remote_code warning panel before model loading (v0.23.0)
+- **Data split**: output files written to input's parent dir (consistent with sample_data) (v0.23.0)
 
 ## Code Conventions
 
