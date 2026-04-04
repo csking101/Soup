@@ -1159,9 +1159,17 @@ Shows: Python version, GPU availability, all dependency versions, and fix sugges
 # Basic version
 soup version
 
+# Machine-readable output
+soup version --json
+# -> {"version": "0.24.0", "python": "3.11.5", "platform": "linux"}
+
 # Full system info (useful for bug reports)
 soup version --full
 # -> soup v0.17.3 | Python 3.11.5 | CUDA 12.1 | extras: serve, data
+
+# Full system info in JSON
+soup version --full --json
+# -> {"version": "0.24.0", "python": "3.11.5", "platform": "linux", "torch": "2.2.0", ...}
 ```
 
 ## Web UI
@@ -1439,7 +1447,7 @@ soup runs compare <run_1> <run_2>             Compare two runs
 soup ui [--port 7860]                         Web UI (experiments, training, data)
 soup doctor                                   Check environment
 soup quickstart [--dry-run]                   Full demo
-soup version [--full]                         Show version (--full: system info)
+soup version [--full] [--json]                Show version (--full: system info, --json: JSON output)
 soup --verbose <command>                      Full traceback on errors
 ```
 
