@@ -51,9 +51,32 @@
       <div id="page-training" class="page">
         <div class="page-header">
           <h1 class="page-title">New Training</h1>
+          <span id="live-badge" class="live-badge" style="display:none">Live</span>
         </div>
         <div id="training-content">
           <div style="text-align:center;padding:3rem;color:var(--text-dim)">Loading...</div>
+        </div>
+        <!-- Training Progress Bar -->
+        <div id="train-progress" class="card" style="display:none">
+          <div class="card-title">Training Progress</div>
+          <div class="progress-bar">
+            <div class="progress-bar-fill" id="progress-fill" style="width:0%"></div>
+          </div>
+          <div class="progress-info">
+            <span id="progress-step">Step 0/0</span>
+            <span id="progress-elapsed">Elapsed: --</span>
+            <span id="progress-eta">ETA: --</span>
+          </div>
+        </div>
+        <!-- Training Log Panel -->
+        <div id="train-log-panel" class="card" style="display:none">
+          <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+            Training Logs
+            <label style="font-size:0.8rem;font-weight:normal">
+              <input type="checkbox" id="log-autoscroll" checked> Auto-scroll
+            </label>
+          </div>
+          <pre class="log-panel" id="log-output"></pre>
         </div>
       </div>
 
@@ -88,15 +111,41 @@
       <div id="page-chat" class="page">
         <div class="page-header">
           <h1 class="page-title">Model Chat</h1>
-          <button class="btn" onclick="clearChat()">Clear Chat</button>
-        </div>
-        <div class="card" style="margin-bottom:1rem">
-          <div style="display:flex; gap:0.75rem; align-items:flex-end">
-            <div class="form-group" style="flex:1; margin-bottom:0">
-              <label class="form-label">Inference Server URL</label>
-              <input type="text" id="chat-server" placeholder="http://localhost:8000" value="http://localhost:8000">
-            </div>
+          <div style="display:flex;gap:0.5rem">
+            <button class="btn" onclick="exportChat()">Export</button>
+            <button class="btn" onclick="clearChat()">Clear</button>
           </div>
+        </div>
+        <div class="card chat-settings">
+          <details>
+            <summary style="cursor:pointer;font-weight:600;font-size:0.9rem">Chat Settings</summary>
+            <div class="grid-2" style="margin-top:0.75rem">
+              <div class="form-group">
+                <label class="form-label">Server URL</label>
+                <input type="text" id="chat-server" placeholder="http://localhost:8000" value="http://localhost:8000">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Adapter</label>
+                <input type="text" id="chat-adapter" placeholder="default">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Temperature: <span id="temp-val">0.7</span></label>
+                <input type="range" id="chat-temperature" min="0" max="2" step="0.1" value="0.7" oninput="document.getElementById('temp-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Max Tokens: <span id="maxtok-val">512</span></label>
+                <input type="range" id="chat-max-tokens" min="64" max="4096" step="64" value="512" oninput="document.getElementById('maxtok-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">Top-p: <span id="topp-val">0.9</span></label>
+                <input type="range" id="chat-top-p" min="0" max="1" step="0.05" value="0.9" oninput="document.getElementById('topp-val').textContent=this.value">
+              </div>
+              <div class="form-group">
+                <label class="form-label">System Prompt</label>
+                <textarea id="chat-system" rows="2" placeholder="You are a helpful assistant."></textarea>
+              </div>
+            </div>
+          </details>
         </div>
         <div class="card chat-container">
           <div class="chat-messages" id="chat-messages">
@@ -105,9 +154,13 @@
               <div class="empty-state-hint">Start a <code>soup serve</code> server and start chatting</div>
             </div>
           </div>
+          <div class="typing-indicator" id="typing-indicator" style="display:none">
+            <span></span><span></span><span></span>
+          </div>
           <div class="chat-input-area">
             <input type="text" id="chat-input" placeholder="Type a message..." onkeydown="handleChatKey(event)">
-            <button class="btn btn-primary" onclick="sendChatMessage()">Send</button>
+            <button class="btn btn-primary" id="chat-send-btn" onclick="sendChatMessage()">Send</button>
+            <button class="btn btn-danger" id="chat-cancel-btn" onclick="cancelChat()" style="display:none">Cancel</button>
           </div>
         </div>
       </div>

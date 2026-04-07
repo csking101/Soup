@@ -1,12 +1,12 @@
 # Soup CLI — Project CLAUDE.md
 
-Soup is a CLI-first LLM fine-tuning tool (v0.24.1). Python 3.9+, MIT license.
+Soup is a CLI-first LLM fine-tuning tool (v0.24.2). Python 3.9+, MIT license.
 
 ## Build & Development
 
 ```bash
 pip install -e ".[dev]"          # Install editable + test deps
-pytest tests/ -v --tb=short      # Run all tests (2061 tests)
+pytest tests/ -v --tb=short      # Run all tests (2128 tests)
 ruff check soup_cli/ tests/      # Lint (must pass before commit)
 ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
@@ -115,7 +115,7 @@ soup_cli/
     freeze.py          # Freeze training: freeze bottom N layers
     registry.py        # Dataset registry: name → path + format mapping
     constants.py       # APP_NAME, paths, default chat template
-tests/                 # 74 test files, 2061 tests
+tests/                 # 78 test files, 2128 tests
 examples/
   configs/             # 7 production-ready YAML examples
   data/                # Sample datasets
@@ -294,8 +294,15 @@ soup version           # Show version (--full for details)
 - **Dataset registry**: JSON validation on load — catches corruption + type mismatch (v0.24.0)
 - **Loss watchdog**: threshold bounded le=100.0, patience bounded le=1000 (v0.24.0)
 - **Freeze training**: freeze_layers bounded le=1000 (v0.24.0)
-- **AWQ/GPTQ export**: output path traversal validation before import check (v0.24.1)
-- **Windows Unicode**: Rich console symbols replaced with ASCII equivalents (v0.24.1)
+- **AWQ/GPTQ export**: output path traversal validation before import check (v0.24.2)
+- **Windows Unicode**: Rich console symbols replaced with ASCII equivalents (v0.24.2)
+- **Chat proxy**: SSRF protection — localhost-only HTTP, HTTPS for remote (v0.24.2)
+- **Chat proxy**: max_tokens capped at 16384, temperature 0-2, top_p 0-1 (v0.24.2)
+- **Chat proxy**: Bearer token auth required on POST endpoint (v0.24.2)
+- **Chat proxy**: XSS prevention — HTML-escape before markdown render (v0.24.2)
+- **Runs compare**: max 5 runs per comparison (v0.24.2)
+- **Config from-form**: validates via load_config_from_string before returning YAML (v0.24.2)
+- **SSE endpoints**: read-only GET, no auth required (consistent with other GET endpoints) (v0.24.2)
 
 ## Code Conventions
 
@@ -369,7 +376,7 @@ soup version           # Show version (--full for details)
 15. **Tag**: `git tag v0.X.Y && git push origin v0.X.Y`
 16. **Release**: `gh release create v0.X.Y` with changelog (What's New, Install/Upgrade)
 
-## Tests (74 test files, 2065 tests)
+## Tests (78 test files, 2065 tests)
 
 | File | Covers |
 |------|--------|
@@ -446,3 +453,7 @@ soup version           # Show version (--full for details)
 | test_freeze_training.py | Freeze training: config, layer freezing, GPT-2 naming, sweep |
 | test_loss_watchdog.py | Loss watchdog: config, callback behavior, patience, sweep |
 | test_dataset_registry.py | Dataset registry: CRUD, CLI, name validation, error handling |
+| test_ui_live_monitor.py | Web UI: SSE log streaming, live metrics SSE, progress endpoint |
+| test_ui_metrics.py | Web UI: metrics full fields, runs compare, eval results display |
+| test_ui_chat.py | Web UI: chat proxy SSE, SSRF protection, param bounds, auth |
+| test_ui_config_builder.py | Web UI: config schema, recipes API, form-to-YAML endpoint |

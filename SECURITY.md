@@ -128,6 +128,7 @@ No known critical vulnerabilities in current releases.
 - **v0.23.0**: AWQ/GPTQ calibration data path traversal protection (resolve + relative_to(cwd)), AWQ/GPTQ output path stays under cwd, curriculum_buckets bounded (ge=1, le=20), AWQ/GPTQ trust_remote_code warning panel
 - **v0.24.0**: HF download trust_remote_code=False + warning panel, HF download output path sanitized (Path.name), download --samples capped at 1M, dataset registry name validation (no path separators/null bytes), registry path traversal protection, loss_watchdog threshold le=100 + patience le=1000, freeze_layers le=1000
 - **v0.24.1**: AWQ/GPTQ output path traversal validation moved before import check (previously unreachable when autoawq/auto-gptq not installed), Windows Unicode fix for Rich console output (replaced non-ASCII symbols with ASCII equivalents)
+- **v0.24.2**: Chat proxy SSRF protection (localhost-only HTTP, HTTPS for remote), chat proxy max_tokens capped at 16384 + temperature/top_p bounded, chat proxy Bearer token auth required, XSS prevention (HTML-escape before markdown render), runs compare max 5 runs, config from-form validates via load_config_from_string, SSE read endpoints no auth (GET)
 
 ## Security Scanning
 

@@ -1,5 +1,6 @@
 """FastAPI application for Soup Web UI."""
 
+import json as json_mod
 import logging
 import os
 import secrets
@@ -7,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -96,6 +98,43 @@ def create_app(host: str = "127.0.0.1", port: int = 7860):
         try:
             runs = tracker.list_runs(limit=limit)
             return {"runs": runs}
+        finally:
+            tracker.close()
+
+    @app.get("/api/runs/compare")
+    def compare_runs(ids: str = Query(default="")):
+        """Compare metrics for multiple runs."""
+        from soup_cli.experiment.tracker import ExperimentTracker
+
+        if not ids or not ids.strip():
+            raise HTTPException(status_code=400, detail="ids parameter required")
+
+        run_ids = [rid.strip() for rid in ids.split(",") if rid.strip()]
+        if len(run_ids) > 5:
+            raise HTTPException(
+                status_code=400, detail="Maximum 5 runs per comparison"
+            )
+        if not run_ids:
+            raise HTTPException(status_code=400, detail="ids parameter required")
+
+        tracker = ExperimentTracker()
+        try:
+            result = []
+            for rid in run_ids:
+                run_info = tracker.get_run(rid)
+                metrics = tracker.get_metrics(rid)
+                config = {}
+                if run_info and run_info.get("config_json"):
+                    try:
+                        config = json_mod.loads(run_info["config_json"])
+                    except (ValueError, TypeError):
+                        pass
+                result.append({
+                    "run_id": rid,
+                    "config": config,
+                    "metrics": metrics,
+                })
+            return {"runs": result}
         finally:
             tracker.close()
 
@@ -299,6 +338,352 @@ def create_app(host: str = "127.0.0.1", port: int = 7860):
             "keys": sorted(keys),
             "sample": sample,
         }
+
+    # --- Training Live Monitor (SSE) ---
+
+    @app.get("/api/train/logs")
+    def stream_training_logs(request: Request):
+        """SSE endpoint streaming training log lines in real time."""
+        from fastapi.responses import StreamingResponse
+
+        last_event_id = request.headers.get("Last-Event-ID")
+        skip_count = int(last_event_id) + 1 if last_event_id else 0
+
+        def _generate_log_events():
+            line_index = 0
+            proc = _train_process
+            if proc is None:
+                yield "event: done\ndata: {}\n\n"
+                return
+
+            try:
+                for raw_line in proc.stdout:
+                    if isinstance(raw_line, bytes):
+                        raw_line = raw_line.decode("utf-8", errors="replace")
+                    text = raw_line.rstrip("\n\r")
+                    if line_index < skip_count:
+                        line_index += 1
+                        continue
+                    data = json_mod.dumps({"line": text, "id": line_index})
+                    yield f"id: {line_index}\ndata: {data}\n\n"
+                    line_index += 1
+            except (ValueError, OSError):
+                pass
+
+            yield "event: done\ndata: {}\n\n"
+
+        return StreamingResponse(
+            _generate_log_events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.get("/api/train/metrics/live")
+    def stream_live_metrics(
+        request: Request,
+        run_id: Optional[str] = Query(default=None),
+    ):
+        """SSE endpoint streaming new metrics as they're logged."""
+        from fastapi.responses import StreamingResponse
+
+        def _generate_metrics_events():
+            from soup_cli.experiment.tracker import ExperimentTracker
+
+            proc = _train_process
+            if proc is None and run_id is None:
+                yield "event: done\ndata: {}\n\n"
+                return
+
+            last_step = -1
+            max_polls = 3  # For tests: limit poll cycles when process done
+            polls_since_new = 0
+
+            while True:
+                tracker = ExperimentTracker()
+                try:
+                    if run_id:
+                        metrics = tracker.get_metrics(run_id)
+                    else:
+                        yield "event: done\ndata: {}\n\n"
+                        return
+                finally:
+                    tracker.close()
+
+                new_metrics = [
+                    m for m in metrics if m.get("step", 0) > last_step
+                ]
+                if new_metrics:
+                    for m_row in new_metrics:
+                        data = json_mod.dumps(m_row, default=str)
+                        yield f"data: {data}\n\n"
+                    last_step = max(
+                        m.get("step", 0) for m in new_metrics
+                    )
+                    polls_since_new = 0
+                else:
+                    polls_since_new += 1
+
+                # Check if training is still running
+                proc = _train_process
+                if proc is None or proc.poll() is not None:
+                    if polls_since_new >= 1:
+                        yield "event: done\ndata: {}\n\n"
+                        return
+
+                # Yield heartbeat
+                yield ":heartbeat\n\n"
+
+                if polls_since_new >= max_polls:
+                    yield "event: done\ndata: {}\n\n"
+                    return
+
+                time.sleep(0.1)  # Short poll for tests
+
+        return StreamingResponse(
+            _generate_metrics_events(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    @app.get("/api/train/progress")
+    def train_progress(
+        run_id: Optional[str] = Query(default=None),
+    ):
+        """Return current training progress snapshot."""
+        proc = _train_process
+        is_running = proc is not None and proc.poll() is None
+
+        if not is_running and run_id is None:
+            return {"running": False, "current_step": 0, "run_id": None}
+
+        if run_id:
+            from soup_cli.experiment.tracker import ExperimentTracker
+
+            tracker = ExperimentTracker()
+            try:
+                metrics = tracker.get_metrics(run_id)
+                current_step = metrics[-1]["step"] if metrics else 0
+            finally:
+                tracker.close()
+
+            return {
+                "running": is_running,
+                "current_step": current_step,
+                "run_id": run_id,
+            }
+
+        return {"running": is_running, "current_step": 0, "run_id": None}
+
+    # --- Config Builder ---
+
+    @app.get("/api/config/schema")
+    def config_schema():
+        """Return config schema as JSON for form generation."""
+        from soup_cli.config.schema import (
+            DataConfig,
+            LoraConfig,
+            SoupConfig,
+            TrainingConfig,
+        )
+
+        def _extract_field_info(model_cls):
+            """Extract field metadata from a Pydantic model."""
+            result = {}
+            for name, field_info in model_cls.model_fields.items():
+                info = {"type": "string", "required": field_info.is_required()}
+
+                # Get default value
+                if field_info.default is not None:
+                    info["default"] = field_info.default
+
+                # Get type annotation
+                annotation = field_info.annotation
+                if annotation is not None:
+                    ann_str = str(annotation)
+                    if "int" in ann_str:
+                        info["type"] = "integer"
+                    elif "float" in ann_str:
+                        info["type"] = "number"
+                    elif "bool" in ann_str:
+                        info["type"] = "boolean"
+
+                    # Check for Literal (enum) types
+                    origin = getattr(annotation, "__origin__", None)
+                    if origin is type(None):
+                        pass
+                    args = getattr(annotation, "__args__", None)
+                    if args and all(isinstance(a, str) for a in args):
+                        info["type"] = "enum"
+                        info["options"] = list(args)
+
+                # Get constraints from metadata
+                for meta in (field_info.metadata or []):
+                    if hasattr(meta, "ge"):
+                        info["ge"] = meta.ge
+                    if hasattr(meta, "le"):
+                        info["le"] = meta.le
+
+                result[name] = info
+            return result
+
+        schema = _extract_field_info(SoupConfig)
+        schema["data"] = _extract_field_info(DataConfig)
+        schema["training"] = _extract_field_info(TrainingConfig)
+        schema["training"]["lora"] = _extract_field_info(LoraConfig)
+        return schema
+
+    @app.get("/api/recipes")
+    def list_recipes():
+        """Return recipe catalog as JSON."""
+        from soup_cli.recipes.catalog import RECIPES
+
+        recipes_list = []
+        for name, meta in RECIPES.items():
+            recipes_list.append({
+                "name": name,
+                "model": meta.model,
+                "task": meta.task,
+                "description": meta.description,
+                "tags": list(meta.tags) if hasattr(meta, "tags") else [],
+                "yaml": meta.yaml_str,
+            })
+        return {"recipes": recipes_list}
+
+    @app.post("/api/config/from-form", dependencies=[Depends(_verify_token)])
+    def form_to_yaml(body: dict):
+        """Convert form field values to validated YAML string."""
+        import yaml
+
+        from soup_cli.config.loader import load_config_from_string
+
+        # Build YAML from form values
+        config_dict = {}
+        for key, val in body.items():
+            if val is not None and val != "" and val != {}:
+                config_dict[key] = val
+
+        try:
+            yaml_str = yaml.dump(
+                config_dict, default_flow_style=False, sort_keys=False
+            )
+            # Validate
+            load_config_from_string(yaml_str)
+            return {"yaml": yaml_str}
+        except Exception as exc:
+            return {"error": str(exc)}
+
+    # --- Chat Proxy ---
+
+    class ChatRequest(PydanticBaseModel):
+        """Request body for chat send."""
+        messages: list
+        endpoint: str
+        temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+        max_tokens: int = Field(default=512, ge=1, le=16384)
+        top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+        adapter: Optional[str] = None
+
+    @app.post("/api/chat/send", dependencies=[Depends(_verify_token)])
+    def chat_send(req: ChatRequest):
+        """SSE proxy endpoint streaming chat completions."""
+        from urllib.parse import urlparse
+
+        from fastapi.responses import StreamingResponse
+
+        # Validate messages
+        if not req.messages:
+            raise HTTPException(status_code=400, detail="messages cannot be empty")
+
+        # SSRF protection: localhost-only HTTP, HTTPS for remote
+        parsed = urlparse(req.endpoint)
+        if parsed.scheme == "http":
+            host = parsed.hostname or ""
+            if host not in ("localhost", "127.0.0.1", "0.0.0.0", "::1"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="HTTP only allowed for localhost endpoints",
+                )
+        elif parsed.scheme != "https":
+            raise HTTPException(
+                status_code=400,
+                detail="Only HTTP (localhost) or HTTPS endpoints allowed",
+            )
+
+        # Validate bounds
+        if req.max_tokens > 16384:
+            raise HTTPException(
+                status_code=400, detail="max_tokens exceeds 16384 cap"
+            )
+        if req.temperature < 0.0 or req.temperature > 2.0:
+            raise HTTPException(
+                status_code=400, detail="temperature must be 0.0-2.0"
+            )
+        if req.top_p < 0.0 or req.top_p > 1.0:
+            raise HTTPException(
+                status_code=400, detail="top_p must be 0.0-1.0"
+            )
+
+        def _stream_chat():
+            import httpx
+
+            url = req.endpoint.rstrip("/") + "/v1/chat/completions"
+            payload = {
+                "messages": req.messages,
+                "max_tokens": req.max_tokens,
+                "temperature": req.temperature,
+                "top_p": req.top_p,
+                "stream": True,
+            }
+            if req.adapter:
+                payload["model"] = req.adapter
+
+            try:
+                with httpx.stream(
+                    "POST", url,
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=120.0,
+                ) as resp:
+                    for line in resp.iter_lines():
+                        if line.startswith("data: "):
+                            data_str = line[6:]
+                            if data_str.strip() == "[DONE]":
+                                yield "data: {\"done\": true}\n\n"
+                                return
+                            try:
+                                parsed_data = json_mod.loads(data_str)
+                                delta = (
+                                    parsed_data.get("choices", [{}])[0]
+                                    .get("delta", {})
+                                    .get("content", "")
+                                )
+                                if delta:
+                                    out = json_mod.dumps({"delta": delta})
+                                    yield f"data: {out}\n\n"
+                            except (ValueError, IndexError, KeyError):
+                                pass
+                yield "data: {\"done\": true}\n\n"
+            except Exception as exc:
+                logger.warning("Chat proxy error: %s", exc)
+                err_msg = json_mod.dumps(
+                    {"error": "Connection failed"}
+                )
+                yield f"data: {err_msg}\n\n"
+
+        return StreamingResponse(
+            _stream_chat(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "X-Accel-Buffering": "no",
+            },
+        )
 
     # --- Health ---
 

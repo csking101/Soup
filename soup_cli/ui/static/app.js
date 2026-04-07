@@ -187,9 +187,10 @@ async function showRunDetail(runId) {
   body.innerHTML = '<div style="text-align:center;padding:2rem;color:var(--text-dim)">Loading...</div>';
 
   try {
-    const [run, metricsResp] = await Promise.all([
+    const [run, metricsResp, evalResp] = await Promise.all([
       api(`/api/runs/${runId}`),
       api(`/api/runs/${runId}/metrics`),
+      api(`/api/runs/${runId}/eval`),
     ]);
 
     const config = run.config_json ? JSON.parse(run.config_json) : {};
@@ -232,16 +233,48 @@ async function showRunDetail(runId) {
       </div>
 
       ${metrics.length > 0 ? `
-        <div class="card">
-          <div class="card-title">Loss Curve</div>
-          <div class="chart-container">
-            <canvas id="loss-chart"></canvas>
+        <div class="chart-grid">
+          <div class="card">
+            <div class="card-title">Loss</div>
+            <div class="chart-container"><canvas id="loss-chart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Learning Rate</div>
+            <div class="chart-container"><canvas id="lr-chart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Gradient Norm</div>
+            <div class="chart-container"><canvas id="gradnorm-chart"></canvas></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Throughput</div>
+            <div class="chart-container"><canvas id="speed-chart"></canvas></div>
           </div>
         </div>
+        ${metrics.some(m => m.gpu_mem) ? `
+          <div class="card">
+            <div class="card-title">GPU Memory</div>
+            <div class="chart-container"><canvas id="gpumem-chart"></canvas></div>
+          </div>
+        ` : ''}
+      ` : ''}
+
+      ${evalResp.eval_results && evalResp.eval_results.length > 0 ? `
         <div class="card">
-          <div class="card-title">Learning Rate</div>
-          <div class="chart-container">
-            <canvas id="lr-chart"></canvas>
+          <div class="card-title">Eval Results</div>
+          <div class="table-wrap">
+            <table class="eval-table">
+              <thead><tr><th>Benchmark</th><th>Score</th><th>Details</th></tr></thead>
+              <tbody>
+                ${evalResp.eval_results.map(er => `
+                  <tr>
+                    <td>${er.benchmark}</td>
+                    <td>${typeof er.score === 'number' ? er.score.toFixed(4) : er.score}</td>
+                    <td><code style="font-size:0.75rem">${er.details_json ? String(er.details_json).substring(0, 100) : '-'}</code></td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
           </div>
         </div>
       ` : ''}
@@ -264,6 +297,24 @@ function renderCharts(metrics) {
   const steps = metrics.map(m => m.step);
   const losses = metrics.map(m => m.loss);
   const lrs = metrics.map(m => m.lr);
+  const gradNorms = metrics.map(m => m.grad_norm || 0);
+  const speeds = metrics.map(m => m.speed || 0);
+
+  const chartOpts = (yLabel) => ({
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { title: { display: true, text: 'Step', color: '#a09088' }, ticks: { color: '#a09088' }, grid: { color: 'rgba(58,48,64,0.5)' } },
+      y: { title: { display: true, text: yLabel, color: '#a09088' }, ticks: { color: '#a09088' }, grid: { color: 'rgba(58,48,64,0.5)' } },
+    },
+  });
+
+  const makeDataset = (label, data, color) => ({
+    label, data, borderColor: color,
+    backgroundColor: color.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+    fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2,
+  });
 
   // Loss chart
   const lossCtx = document.getElementById('loss-chart');
@@ -271,28 +322,8 @@ function renderCharts(metrics) {
     if (lossChart) lossChart.destroy();
     lossChart = new Chart(lossCtx, {
       type: 'line',
-      data: {
-        labels: steps,
-        datasets: [{
-          label: 'Loss',
-          data: losses,
-          borderColor: '#c0512d',
-          backgroundColor: 'rgba(192, 81, 45, 0.1)',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 0,
-          borderWidth: 2,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { title: { display: true, text: 'Step', color: '#a09088' }, ticks: { color: '#a09088' }, grid: { color: 'rgba(58,48,64,0.5)' } },
-          y: { title: { display: true, text: 'Loss', color: '#a09088' }, ticks: { color: '#a09088' }, grid: { color: 'rgba(58,48,64,0.5)' } },
-        },
-      },
+      data: { labels: steps, datasets: [makeDataset('Loss', losses, 'rgb(192, 81, 45)')] },
+      options: chartOpts('Loss'),
     });
   }
 
@@ -301,28 +332,43 @@ function renderCharts(metrics) {
   if (lrCtx) {
     new Chart(lrCtx, {
       type: 'line',
-      data: {
-        labels: steps,
-        datasets: [{
-          label: 'Learning Rate',
-          data: lrs,
-          borderColor: '#e8975a',
-          backgroundColor: 'rgba(232, 151, 90, 0.1)',
-          fill: true,
-          tension: 0.3,
-          pointRadius: 0,
-          borderWidth: 2,
-        }],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { title: { display: true, text: 'Step', color: '#a09088' }, ticks: { color: '#a09088' }, grid: { color: 'rgba(58,48,64,0.5)' } },
-          y: { title: { display: true, text: 'LR', color: '#a09088' }, ticks: { color: '#a09088' }, grid: { color: 'rgba(58,48,64,0.5)' } },
-        },
-      },
+      data: { labels: steps, datasets: [makeDataset('LR', lrs, 'rgb(232, 151, 90)')] },
+      options: chartOpts('LR'),
+    });
+  }
+
+  // Gradient Norm chart
+  const gnCtx = document.getElementById('gradnorm-chart');
+  if (gnCtx) {
+    new Chart(gnCtx, {
+      type: 'line',
+      data: { labels: steps, datasets: [makeDataset('Grad Norm', gradNorms, 'rgb(100, 180, 220)')] },
+      options: chartOpts('Grad Norm'),
+    });
+  }
+
+  // Speed chart
+  const spCtx = document.getElementById('speed-chart');
+  if (spCtx) {
+    new Chart(spCtx, {
+      type: 'line',
+      data: { labels: steps, datasets: [makeDataset('Speed', speeds, 'rgb(120, 200, 130)')] },
+      options: chartOpts('Tokens/sec'),
+    });
+  }
+
+  // GPU Memory chart (optional — parse numeric values from strings like "4.2GB")
+  const gmCtx = document.getElementById('gpumem-chart');
+  if (gmCtx) {
+    const gpuVals = metrics.map(m => {
+      if (!m.gpu_mem) return 0;
+      const match = String(m.gpu_mem).match(/([\d.]+)/);
+      return match ? parseFloat(match[1]) : 0;
+    });
+    new Chart(gmCtx, {
+      type: 'line',
+      data: { labels: steps, datasets: [makeDataset('GPU Mem', gpuVals, 'rgb(200, 130, 200)')] },
+      options: chartOpts('GPU Memory (GB)'),
     });
   }
 }
@@ -334,10 +380,12 @@ function closeModal() {
 // --- New Training Page ---
 async function loadTrainingPage() {
   try {
-    const [templatesResp, statusResp] = await Promise.all([
+    const [templatesResp, statusResp, recipesResp] = await Promise.all([
       api('/api/templates'),
       api('/api/train/status'),
+      api('/api/recipes'),
     ]);
+    window._recipes = recipesResp.recipes || [];
     renderTrainingPage(templatesResp.templates, statusResp);
   } catch (err) {
     document.getElementById('training-content').innerHTML =
@@ -353,12 +401,22 @@ function renderTrainingPage(templates, status) {
     <div class="grid-2">
       <div>
         <div class="card">
-          <div class="card-title">Template</div>
-          <div class="form-group">
-            <select id="template-select" onchange="loadTemplate()">
-              <option value="">-- Select a template --</option>
-              ${templateNames.map(t => `<option value="${t}">${t}</option>`).join('')}
-            </select>
+          <div class="card-title">Template / Recipe</div>
+          <div class="grid-2" style="margin-bottom:0">
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:0.8rem">Template</label>
+              <select id="template-select" onchange="loadTemplate()">
+                <option value="">-- Template --</option>
+                ${templateNames.map(t => `<option value="${t}">${t}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label class="form-label" style="font-size:0.8rem">Recipe</label>
+              <select id="recipe-select" onchange="loadRecipe()">
+                <option value="">-- Recipe --</option>
+                ${(window._recipes || []).map(r => `<option value="${r.name}">${r.name} (${r.task})</option>`).join('')}
+              </select>
+            </div>
           </div>
         </div>
 
@@ -409,6 +467,16 @@ function loadTemplate() {
   const editor = document.getElementById('config-editor');
   if (sel.value && window._templates[sel.value]) {
     editor.value = window._templates[sel.value];
+  }
+}
+
+function loadRecipe() {
+  const sel = document.getElementById('recipe-select');
+  const editor = document.getElementById('config-editor');
+  if (!sel.value || !window._recipes) return;
+  const recipe = window._recipes.find(r => r.name === sel.value);
+  if (recipe && recipe.yaml) {
+    editor.value = recipe.yaml;
   }
 }
 
@@ -524,8 +592,9 @@ function renderDataResults(data) {
 }
 
 // --- Model Chat ---
+let chatAbortController = null;
+
 function loadChatPage() {
-  // Just ensure the page renders with current messages
   renderChatMessages();
 }
 
@@ -546,7 +615,7 @@ function renderChatMessages() {
   container.innerHTML = chatMessages.map(msg => `
     <div class="chat-msg ${msg.role}">
       <div class="chat-msg-role">${msg.role}</div>
-      <div class="chat-msg-content">${escapeHtml(msg.content)}</div>
+      <div class="chat-msg-content chat-markdown">${msg.role === 'assistant' ? renderMarkdown(msg.content) : escapeHtml(msg.content)}</div>
     </div>
   `).join('');
 
@@ -559,35 +628,119 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function renderMarkdown(text) {
+  let html = escapeHtml(text);
+  // Code blocks (``` ... ```)
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, '<pre class="code-block"><code>$2</code></pre>');
+  // Inline code
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  // Bold
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // List items
+  html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
 async function sendChatMessage() {
   const input = document.getElementById('chat-input');
   const serverUrl = document.getElementById('chat-server').value.trim();
   const msg = input.value.trim();
   if (!msg) return;
-  if (!serverUrl) { alert('Enter a server URL (e.g., http://localhost:8000)'); return; }
+  if (!serverUrl) { alert('Enter a server URL'); return; }
 
+  // Build messages with optional system prompt
+  const systemPrompt = document.getElementById('chat-system')?.value?.trim();
+  const allMessages = [];
+  if (systemPrompt) {
+    allMessages.push({ role: 'system', content: systemPrompt });
+  }
   chatMessages.push({ role: 'user', content: msg });
+  allMessages.push(...chatMessages.map(m => ({ role: m.role, content: m.content })));
   input.value = '';
   renderChatMessages();
 
+  // Show typing indicator, switch buttons
+  const typing = document.getElementById('typing-indicator');
+  const sendBtn = document.getElementById('chat-send-btn');
+  const cancelBtn = document.getElementById('chat-cancel-btn');
+  if (typing) typing.style.display = 'flex';
+  if (sendBtn) sendBtn.style.display = 'none';
+  if (cancelBtn) cancelBtn.style.display = 'inline-flex';
+
+  chatAbortController = new AbortController();
+
+  const temperature = parseFloat(document.getElementById('chat-temperature')?.value || '0.7');
+  const maxTokens = parseInt(document.getElementById('chat-max-tokens')?.value || '512');
+  const topP = parseFloat(document.getElementById('chat-top-p')?.value || '0.9');
+  const adapter = document.getElementById('chat-adapter')?.value?.trim() || undefined;
+
   try {
-    const resp = await fetch(serverUrl + '/v1/chat/completions', {
+    const resp = await fetch(API + '/api/chat/send', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + (window._authToken || ''),
+      },
       body: JSON.stringify({
-        messages: chatMessages.map(m => ({ role: m.role, content: m.content })),
-        max_tokens: 512,
-        temperature: 0.7,
+        messages: allMessages,
+        endpoint: serverUrl,
+        temperature: temperature,
+        max_tokens: maxTokens,
+        top_p: topP,
+        adapter: adapter,
       }),
+      signal: chatAbortController.signal,
     });
-    const data = await resp.json();
-    const reply = data.choices[0].message.content;
-    chatMessages.push({ role: 'assistant', content: reply });
-    renderChatMessages();
+
+    // Stream tokens
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let assistantMsg = '';
+    chatMessages.push({ role: 'assistant', content: '' });
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      const chunk = decoder.decode(value);
+      const lines = chunk.split('\n');
+      for (const line of lines) {
+        if (line.startsWith('data: ')) {
+          try {
+            const data = JSON.parse(line.slice(6));
+            if (data.done) break;
+            if (data.delta) {
+              assistantMsg += data.delta;
+              chatMessages[chatMessages.length - 1].content = assistantMsg;
+              renderChatMessages();
+            }
+            if (data.error) {
+              assistantMsg += '[Error: ' + data.error + ']';
+              chatMessages[chatMessages.length - 1].content = assistantMsg;
+              renderChatMessages();
+            }
+          } catch (parseErr) { /* ignore malformed lines */ }
+        }
+      }
+    }
   } catch (err) {
-    chatMessages.push({ role: 'assistant', content: `[Error: ${err.message}]` });
-    renderChatMessages();
+    if (err.name !== 'AbortError') {
+      chatMessages.push({ role: 'assistant', content: `[Error: ${err.message}]` });
+      renderChatMessages();
+    }
+  } finally {
+    chatAbortController = null;
+    if (typing) typing.style.display = 'none';
+    if (sendBtn) sendBtn.style.display = 'inline-flex';
+    if (cancelBtn) cancelBtn.style.display = 'none';
   }
+}
+
+function cancelChat() {
+  if (chatAbortController) chatAbortController.abort();
 }
 
 function clearChat() {
@@ -595,11 +748,95 @@ function clearChat() {
   renderChatMessages();
 }
 
+function exportChat() {
+  if (chatMessages.length === 0) return;
+  const blob = new Blob([JSON.stringify(chatMessages, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'chat-export.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 function handleChatKey(event) {
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault();
     sendChatMessage();
   }
+}
+
+// --- Training Live Monitor (SSE) ---
+let logEventSource = null;
+let metricsEventSource = null;
+const LOG_MAX_LINES = 500;
+
+function connectTrainingSSE() {
+  disconnectTrainingSSE();
+
+  const logPanel = document.getElementById('train-log-panel');
+  const progressPanel = document.getElementById('train-progress');
+  const liveBadge = document.getElementById('live-badge');
+  if (!logPanel) return;
+
+  logPanel.style.display = 'block';
+  progressPanel.style.display = 'block';
+  if (liveBadge) liveBadge.style.display = 'inline-flex';
+
+  // Connect to log SSE
+  logEventSource = new EventSource(API + '/api/train/logs');
+  logEventSource.onmessage = function(ev) {
+    const data = JSON.parse(ev.data);
+    appendLogLine(data.line);
+  };
+  logEventSource.addEventListener('done', function() {
+    appendLogLine('[Training finished]');
+    disconnectTrainingSSE();
+  });
+  logEventSource.onerror = function() {
+    setTimeout(function() {
+      if (logEventSource && logEventSource.readyState === EventSource.CLOSED) {
+        disconnectTrainingSSE();
+      }
+    }, 5000);
+  };
+}
+
+function disconnectTrainingSSE() {
+  if (logEventSource) { logEventSource.close(); logEventSource = null; }
+  if (metricsEventSource) { metricsEventSource.close(); metricsEventSource = null; }
+  const liveBadge = document.getElementById('live-badge');
+  if (liveBadge) liveBadge.style.display = 'none';
+}
+
+function appendLogLine(text) {
+  const output = document.getElementById('log-output');
+  if (!output) return;
+  output.textContent += text + '\n';
+  // Ring buffer: trim to max lines
+  const lines = output.textContent.split('\n');
+  if (lines.length > LOG_MAX_LINES) {
+    output.textContent = lines.slice(lines.length - LOG_MAX_LINES).join('\n');
+  }
+  // Auto-scroll
+  const autoScroll = document.getElementById('log-autoscroll');
+  if (autoScroll && autoScroll.checked) {
+    output.scrollTop = output.scrollHeight;
+  }
+}
+
+function updateProgressBar(step, total, elapsed, eta) {
+  const fill = document.getElementById('progress-fill');
+  const stepEl = document.getElementById('progress-step');
+  const elapsedEl = document.getElementById('progress-elapsed');
+  const etaEl = document.getElementById('progress-eta');
+  if (!fill) return;
+
+  const pct = total > 0 ? Math.min(100, (step / total) * 100) : 0;
+  fill.style.width = pct.toFixed(1) + '%';
+  if (stepEl) stepEl.textContent = 'Step ' + step + (total ? '/' + total : '');
+  if (elapsedEl) elapsedEl.textContent = 'Elapsed: ' + formatDuration(elapsed);
+  if (etaEl) etaEl.textContent = 'ETA: ' + formatDuration(eta);
 }
 
 // --- Init ---
