@@ -29,7 +29,7 @@ RUN curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
 # Set working directory
 WORKDIR /workspace
 
-# Install Soup
+# Install Soup from PyPI (always the latest published release, not local source)
 RUN pip install --no-cache-dir "soup-cli[serve,data,eval]"
 
 # Default entrypoint and command

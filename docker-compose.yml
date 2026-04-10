@@ -1,8 +1,6 @@
-version: '3.8'
-
 services:
   soup:
-    image: soupcli/soup:latest
+    image: ghcr.io/makazhanalpamys/soup:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -15,4 +13,4 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
-    ipc: host # Recommended for PyTorch multi-processing
+    ipc: host  # Recommended for PyTorch multi-processing
