@@ -381,29 +381,95 @@ soup version           # Show version (--full for details)
 
 **Required for every phase. Do not skip steps. Every phase = full cycle from code to PyPI.**
 
-**If the phase has multiple parts (A, B, C…):** implement part by part. Write tests FIRST (TDD), then implement to pass them. Run `ruff check soup_cli/ tests/` + `pytest tests/ -v --tb=short` after each part to catch issues early. Only proceed to the Release Checklist below after ALL parts pass lint + tests.
+**Multi-part phases (A, B, C…):** implement part by part. Write tests FIRST (TDD), then implement to pass them. Run `ruff check soup_cli/ tests/` + `pytest tests/ -v --tb=short` after each part to catch issues early. Only proceed to the Release Checklist below after ALL parts pass lint + tests.
+
+### Implementation (steps 1–4)
 
 1. **Code**: implement the feature following project conventions
-2. **Tests**: write tests, add the test file to the test table below
+   - Pydantic v2 models in `config/schema.py`
+   - Lazy imports for heavy deps (`torch`, `transformers`, `peft`, `trl`, `mlx`) inside functions
+   - Rich Console for output, never bare `print()`
+   - Wrapper pattern for trainers (mirror `sft.py` / `dpo.py`)
+   - All new modules that use `str | None` (PEP 604) syntax on function/local annotations **must** have `from __future__ import annotations` at the top — we still support Python 3.9
+   - Cross-platform path checks: use `os.path.realpath` + `os.path.commonpath`, **not** `Path.resolve() + relative_to()`. The latter fails on Windows short names (`C:\Users\RUNNER~1`). See `_is_under_cwd` in `commands/autopilot.py`.
+2. **Tests**: write tests first, add the test file to the test table below
+   - Cover happy path, failure modes, security (path traversal, bounds), edge cases
+   - Assert specific error messages, not just `exit_code != 0`
+   - Use `assert result.exit_code == 0, (result.output, repr(result.exception))` so future CI failures print the real exception
 3. **Lint**: `ruff check soup_cli/ tests/` — must be clean
-4. **Pytest**: `pytest tests/ -v --tb=short` — all tests must pass
-5. **Reviews** (run in order, fix all CRITICAL and HIGH before next):
-   - `/everything-claude-code:python-review`
-   - `/everything-claude-code:code-review`
-   - `/security-review`
-   - `/everything-claude-code:tdd`
-   - `/everything-claude-code:verification-loop`
-6. **Version**: bump version in `pyproject.toml` + `soup_cli/__init__.py`
-7. **CLAUDE.md**: update architecture, test table, and any new sections
-8. **README.md**: add docs for new feature, update Features / All Commands / Data Formats
-9. **SECURITY.md**: update if new security fixes or supported versions changed
-10. **CONTRIBUTING.md**: update if dev workflow, deps, or project structure changed
-11. **examples/README.md**: update if new example configs or datasets added
-12. **plan.md**: mark the phase as complete, update version/test counters
-13. **Commit**: one commit per phase with a descriptive message
-14. **Push**: `git push origin main`
-15. **Tag**: `git tag v0.X.Y && git push origin v0.X.Y`
-16. **Release**: `gh release create v0.X.Y` with changelog (What's New, Install/Upgrade)
+4. **Pytest**: `pytest tests/ -v --tb=short` — all tests must pass (run with `--no-cov` for targeted subsets since coverage gate is 50%)
+
+### Review round (step 5)
+
+5. **Reviews** — run all five review agents. Running them in parallel is fine and saves time; fix findings between waves.
+   - `/everything-claude-code:python-review` — PEP 8 + type hints + Pythonic idioms
+   - `/everything-claude-code:code-review` — correctness, maintainability, patterns
+   - `/security-review` — path traversal, subprocess sandbox, input validation, bounds
+   - `/everything-claude-code:tdd` — test quality, coverage gaps, missing negative tests
+   - `/everything-claude-code:verification-loop` — smoke checks (may be unavailable in harness; if so, do manual equivalent: `python -m soup_cli.cli --help`, `soup <new-command> --help`, verify new imports/routes)
+
+   **Fix every finding** — CRITICAL, HIGH, MEDIUM, and LOW — or explicitly document as a known design limitation (with rationale in `.claude/CLAUDE.md` security section and a follow-up GitHub issue). "CRITICAL/HIGH only" leaves quality debt that compounds.
+
+   After fixes, re-run `ruff` + `pytest` to confirm nothing regressed.
+
+### Local smoke verification (step 6 — NEW)
+
+6. **Local CLI smoke tests** — before touching version numbers or docs, actually run the new commands end-to-end:
+   - `python -m soup_cli.cli version` — confirms editable install is loaded, not a stale PyPI shadow
+   - `python -m soup_cli.cli --help` — confirms new commands are registered
+   - `python -m soup_cli.cli <new-command> --help` — confirms command works
+   - Run at least one happy-path invocation of each new CLI entry point
+   - If a stale shadow install is shadowing the editable one, run `python -m pip install -e . --force-reinstall --no-deps` against the correct Python version
+   - Document any non-bug observations (stale-install gotcha, CI encoding quirks) in the commit message so future maintainers see them
+
+### Docs (steps 7–12)
+
+7. **Version**: bump version in `pyproject.toml` AND `soup_cli/__init__.py` — both files
+8. **CLAUDE.md**: update architecture, test table, CLI commands list, schema field list, template count, recipe count, security section, and **every test count reference** (there are ≥3: "Run all tests (N tests)", "tests/ # N test files, M tests", "## Tests (N test files, M tests)")
+9. **README.md**: add "New in vX.Y.Z" section near top, update Features / All Commands / Data Formats sections
+10. **SECURITY.md**: if new security fixes or supported-version window changed, update both the version list AND any per-version fix notes
+11. **CONTRIBUTING.md**: update if dev workflow / deps / project structure changed — including the test file table and directory tree (ALSO has test counts that drift)
+12. **examples/README.md**: update if new example configs or datasets added (skip if none)
+13. **plan.md**: mark the phase as complete (add "(done, pending tag)" to the heading) — note this file is gitignored, edit persists locally only
+
+### Ship (steps 14–18)
+
+14. **Commit**: one commit per phase with a descriptive message. Stage specific files, not `git add -A`. Use HEREDOC for multi-line messages. Include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`.
+15. **Push**: `git push origin main`
+16. **Wait for CI to go green** before tagging. CI runs on `ubuntu-latest`, `windows-latest`, `macos-latest` × Python 3.9/3.11/3.12. Watch for:
+    - Windows encoding issues → set `PYTHONUTF8=1` in workflow env
+    - Windows 8.3 short names breaking `Path.resolve()` on py3.9 → use `os.path.realpath`
+    - `trl` / `transformers` upstream source files with non-ASCII without explicit encoding
+    - If CI fails, fix on main before tagging; never tag a red commit
+17. **Tag**: `git tag vX.Y.Z && git push origin vX.Y.Z` — only after CI is green
+18. **Release**: `gh release create vX.Y.Z --title "vX.Y.Z — <tagline>" --notes "..."` with changelog (What's New, Install/Upgrade, Security). PyPI auto-publishes via Trusted Publisher OIDC on tag push.
+
+### Verify downstream publishes (step 19 — NEW)
+
+19. **Confirm PyPI + GHCR published the new version.** Two separate auto-workflows fire off the release; verify both landed before considering the release done:
+    - **PyPI** (via `.github/workflows/publish.yml`, Trusted Publisher OIDC on tag push): check `pip index versions soup-cli` or visit `https://pypi.org/project/soup-cli/` and confirm the new version is listed. Usually ready in 1–2 minutes.
+    - **GHCR Docker image** (via `.github/workflows/docker.yml`, triggered on `release: published` — hence after the `gh release create` step, not the tag push): `gh run list --workflow docker.yml --limit 3` should show the new release job, and `gh api /users/<owner>/packages/container/soup/versions` (requires `read:packages` scope) or the GitHub repo sidebar "Packages" section should list the new tag. Build takes ~10–15 minutes on CI. If the build fails, fix it on main and re-trigger via `workflow_dispatch`; do NOT delete the GitHub release to retry because that breaks PyPI idempotency.
+    - Both publishes must land before step 20. If either is red, the release is incomplete.
+
+### Issue grooming (steps 20–21)
+
+20. **Close resolved issues**: search `gh issue list --state open` for issues whose asks are now shipped (new recipes, new commands, etc.) and close them with a comment pointing to the release notes and `soup <command>` examples.
+21. **File new issues for known limitations**: every documented design limitation from the review round becomes an issue with severity, proposed fix path, and acceptance criteria. Tag `help wanted` or `enhancement` as appropriate. This is how "best-effort" mitigations stay discoverable.
+
+### CI-only / docs-only hotfixes
+
+Commits that only touch `.github/`, `tests/`, or `docs/` don't ship to PyPI and don't require a version bump. Commits that touch `soup_cli/` do — but a patch bump (`0.X.Y → 0.X.Y+1`) without a tag/release is fine if the change is a small regression fix; bundle it into the next minor. Explicitly decide per commit and document the decision.
+
+### Anti-patterns to avoid
+
+- Running `git add -A` — catches unintended files
+- Skipping hooks with `--no-verify` — hooks exist for a reason
+- Tagging before CI is green — publishes broken wheel to PyPI
+- "Fix CRITICAL/HIGH only" — leaves quality debt, user will ask later
+- `exit_code != 0` assertions without message capture — masks root cause when CI fails
+- Using `Path.resolve() + relative_to()` for path-containment checks — breaks on Windows short names, use `os.path.realpath + commonpath`
+- Forgetting to update test counts in multiple docs after adding tests
+- Forgetting to close GitHub issues that were resolved by the release
 
 ## Tests (86 test files, 2313 tests)
 
