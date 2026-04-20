@@ -59,6 +59,14 @@ def train(
         "--fsdp",
         help="Enable FSDP2: full_shard, shard_grad, or full_offload",
     ),
+    gate: str = typer.Option(
+        None,
+        "--gate",
+        help=(
+            "Enable eval-gated training with a suite file "
+            "(shortcut for training.eval_gate.enabled=true + suite=<path>)"
+        ),
+    ),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -76,6 +84,20 @@ def train(
     # Load & validate config
     console.print(f"[dim]Loading config from {config_path}...[/]")
     cfg = load_config(config_path)
+
+    # --- Eval-gate shortcut: --gate <path> sets training.eval_gate ---
+    if gate:
+        from soup_cli.config.schema import EvalGateConfig
+        from soup_cli.eval.gate import load_suite
+
+        try:
+            # Validate the suite path up-front (path containment + parse).
+            load_suite(gate)
+        except (FileNotFoundError, ValueError) as exc:
+            console.print(f"[red]Invalid --gate suite: {exc}[/]")
+            raise typer.Exit(1) from exc
+        cfg.training.eval_gate = EvalGateConfig(enabled=True, suite=gate)
+        console.print(f"[green]Eval gate enabled[/] with suite: {gate}")
 
     # --- Resolve resume checkpoint (fail fast before heavy operations) ---
     resume_from = None

@@ -30,6 +30,7 @@ class SoupTrainerCallback(TrainerCallback):
         loss_watchdog: bool = False,
         loss_watchdog_threshold: float = 3.0,
         loss_watchdog_patience: int = 5,
+        eval_gate_config: Optional[object] = None,
     ):
         self.display = display
         self.tracker = tracker
@@ -42,6 +43,14 @@ class SoupTrainerCallback(TrainerCallback):
         self._watchdog_patience = loss_watchdog_patience
         self._watchdog_counter = 0
         self._watchdog_fired = False
+        # Eval gate state (Part B of v0.26.0)
+        self.eval_gate_config = eval_gate_config
+        # Tests inject these; prod wiring sets them at on_train_begin time.
+        self._gate_suite: Optional[object] = None
+        self._gate_generate_fn: Optional[object] = None
+        self._gate_baseline: Optional[dict] = None
+        # Injectable for tests; default is the real implementation.
+        self._gate_run_fn = None
 
     def on_train_begin(
         self, args: TrainingArguments, state: TrainerState,
@@ -124,6 +133,66 @@ class SoupTrainerCallback(TrainerCallback):
                 speed=speed,
                 gpu_mem=gpu_mem,
             )
+
+    def on_epoch_end(
+        self, args: TrainingArguments, state: TrainerState,
+        control: TrainerControl, **kwargs,
+    ):
+        """Run the eval gate, if configured."""
+        self._run_eval_gate(state, control)
+
+    def _run_eval_gate(self, state: TrainerState, control: TrainerControl) -> None:
+        """Execute the eval gate and react per ``on_regression`` policy."""
+        cfg = self.eval_gate_config
+        if cfg is None or not getattr(cfg, "enabled", False):
+            return
+        suite = self._gate_suite
+        if suite is None:
+            return
+        every_n = int(getattr(cfg, "every_n_epochs", 1) or 1)
+        current_epoch = int(state.epoch or 0)
+        if current_epoch <= 0 or current_epoch % every_n != 0:
+            return
+
+        from soup_cli.eval.gate import run_gate as _default_run_gate
+
+        run_fn = self._gate_run_fn if self._gate_run_fn is not None else _default_run_gate
+
+        baseline = self._gate_baseline or {}
+        threshold = float(getattr(cfg, "regression_threshold", 0.05))
+        generate_fn = self._gate_generate_fn or (lambda prompt: "")
+        on_reg = getattr(cfg, "on_regression", "stop")
+        try:
+            result = run_fn(
+                suite, generate_fn=generate_fn, baseline=baseline,
+                regression_threshold=threshold,
+            )
+        except (ValueError, FileNotFoundError, OSError) as exc:
+            # Structured errors — log and react per policy. 'stop' means
+            # the user wants safety; treat errors as regressions for stop.
+            logger.warning("eval gate failed to execute: %s", exc)
+            if on_reg == "stop":
+                control.should_training_stop = True
+            return
+        except Exception as exc:  # unexpected — fail safe under 'stop'
+            logger.exception("eval gate raised unexpected error: %s", exc)
+            if on_reg == "stop":
+                control.should_training_stop = True
+            return
+
+        if not result.passed:
+            if on_reg == "stop":
+                control.should_training_stop = True
+                logger.warning(
+                    "eval gate FAILED (%d task(s) regressed); stopping training",
+                    sum(1 for r in result.task_results if not r.passed),
+                )
+            elif on_reg == "warn":
+                logger.warning(
+                    "eval gate FAILED (%d task(s) regressed); continuing per policy",
+                    sum(1 for r in result.task_results if not r.passed),
+                )
+            # on_reg == "continue": silent per user policy
 
     def on_train_end(
         self, args: TrainingArguments, state: TrainerState,

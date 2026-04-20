@@ -36,12 +36,16 @@ soup init --template chat
 soup train
 ```
 
-### New in v0.26.0 — "Red and Blue Ocean" (Part A)
+### New in v0.26.0 — "Red and Blue Ocean"
 
-- **Local Model Registry** — `soup registry push/list/show/diff/search/promote/delete`: track every fine-tune with lineage, config, and eval baseline. SQLite-backed at `~/.soup/registry.db`, foundation of the v0.26.0 flywheel.
-- **`soup history <name>`** — view the full lineage DAG (ancestors + descendants) for any named artifact.
-- **Config + eval diff** — `soup registry diff v1 v2` shows exactly what changed between two recipes, including benchmark deltas.
-- **Security-hardened**: name/tag validation (alphanumeric + `_-.` only), LIKE-wildcard escaping, parameterised SQL, 600 perms on POSIX, Windows-safe path containment via `os.path.realpath`, cycle-safe lineage walks.
+The flywheel: **Train -> Registry -> Deploy -> Observe -> Improve -> Train**.
+
+- **Local Model Registry** (Part A) — `soup registry push/list/show/diff/search/promote/delete`: track every fine-tune with lineage, config, and eval baseline. `soup history <name>` renders the full DAG. Backing store: `~/.soup/registry.db`.
+- **Eval-Gated Training** (Part B) — `training.eval_gate` (or `soup train --gate evals/gate.yaml`) runs a declarative suite at epoch boundaries and halts training on regression. `soup eval gate` for post-hoc verdicts. Baselines may be `registry://<id>`, a file, or omitted.
+- **Trace-to-Preference** (Part C) — `soup data from-traces` ingests LangChain / OpenAI / Soup-serve logs, builds DPO/KTO-ready preference pairs from thumbs, regenerations, or user edits. `soup data review` previews pairs before training.
+- **Quant-Lobotomy Checker** (Part D) — `soup eval quant-check --before X --after Y --tasks t.jsonl` renders an OK / MINOR / MAJOR verdict per task so you never ship a quantization regression unknowingly.
+- **Soup Cans** (Part E) — `.can` = tar.gz of manifest + config + data_ref. `soup can pack/inspect/verify/fork` makes recipes shareable + reproducible; safe tar extraction blocks symlink / path-traversal escape; 100 MB cap; format version locked to 1.
+- **Security-hardened**: name/tag validation; SQL LIKE-wildcard escaping; Windows-safe path containment via shared `os.path.realpath + commonpath`; SSRF allowlist on judge URLs; HTTPS-only `DataRef`; dunder-key / null-byte rejection in can-fork; cycle detection in lineage walks; structured-error-as-regression policy in eval gate.
 
 ### New in v0.25.0 — "Beyond the Wrapper"
 
@@ -1082,7 +1086,7 @@ Automatically maps model, LoRA, training params, quantization, and task type. Wa
 
 ## Ready-Made Recipes
 
-29 pre-built configs for popular models — no guessing hyperparameters:
+43 pre-built configs for popular models — no guessing hyperparameters:
 
 ```bash
 # List all recipes
@@ -1100,7 +1104,7 @@ soup recipes search "reasoning"
 soup recipes search --size 7b
 ```
 
-Recipes cover Llama 3.1/3.2, Qwen 2.5/3, Mistral, Gemma 3, Phi-4, DeepSeek R1 across SFT, DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, embedding, pretrain, and vision tasks.
+Recipes cover Llama 3.1/3.2/4, Qwen 2.5/3, Mistral, Gemma 3, Phi-4, DeepSeek R1/V3, plus MLX Apple Silicon recipes across SFT, DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, embedding, pretrain, tool-calling, and vision tasks.
 
 ## Hyperparameter Sweep
 
@@ -1219,15 +1223,15 @@ soup version
 
 # Machine-readable output
 soup version --json
-# -> {"version": "0.24.0", "python": "3.11.5", "platform": "linux"}
+# -> {"version": "0.26.0", "python": "3.11.5", "platform": "linux"}
 
 # Full system info (useful for bug reports)
 soup version --full
-# -> soup v0.17.3 | Python 3.11.5 | CUDA 12.1 | extras: serve, data
+# -> soup v0.26.0 | Python 3.11.5 | CUDA 12.1 | extras: serve, data
 
 # Full system info in JSON
 soup version --full --json
-# -> {"version": "0.24.0", "python": "3.11.5", "platform": "linux", "torch": "2.2.0", ...}
+# -> {"version": "0.26.0", "python": "3.11.5", "platform": "linux", "torch": "2.2.0", ...}
 ```
 
 ## Web UI
@@ -1434,9 +1438,11 @@ eval:
 
 ```
 soup init [--template chat|code|...|audio]       Create config
+soup autopilot --model <id> --data d.jsonl --goal <g>  Zero-config (v0.25.0)
 soup train --config soup.yaml                 Start training
 soup train --config soup.yaml --tensorboard   Train with TensorBoard logging
 soup train --config soup.yaml --fsdp full_shard  Train with FSDP2
+soup train --config soup.yaml --gate evals/gate.yaml  Eval-gated training (v0.26.0)
 soup infer --model ./output --input p.jsonl   Batch inference
 soup chat --model ./output                    Interactive chat
 soup push --model ./output --repo user/name   Upload to HuggingFace
@@ -1457,6 +1463,8 @@ soup eval auto --config soup.yaml             Auto-eval from config
 soup eval compare <run1> <run2>               Compare eval results
 soup eval leaderboard                         Local model leaderboard
 soup eval human --input p.jsonl               Human A/B evaluation
+soup eval gate --suite gate.yaml              Run eval-gate suite standalone (v0.26.0)
+soup eval quant-check --before X --after Y --tasks t.jsonl  Before/after quant (v0.26.0)
 soup serve --model ./output --port 8000       OpenAI-compatible API server
 soup serve --model ./output --backend vllm    vLLM backend (2-4x throughput)
 soup serve --model ./output --backend sglang  SGLang backend
@@ -1475,6 +1483,9 @@ soup data generate ... --provider anthropic   Use Claude API
 soup data generate ... --provider vllm        Use local vLLM server
 soup data generate ... --template code        Domain templates (code/conversation/qa/preference/reasoning)
 soup data generate ... --quality-pipeline     Auto validate + filter + dedup
+soup data augment <path> --strategy rephrase|translate|style  LLM-driven augmentation (v0.25.0)
+soup data from-traces --logs l.jsonl --format langchain --signal thumbs_up --output p.jsonl  Preference pairs from traces (v0.26.0)
+soup data review prefs.jsonl --sample 10      Preview preference pairs (v0.26.0)
 soup data filter <path> --coherence 0.3       Quality filter (perplexity/coherence)
 soup data sample <path> --n 1000             Random sample subset
 soup data sample <path> --n 1000 --strategy diverse  Cluster-based diverse sampling
@@ -1502,10 +1513,22 @@ soup migrate --from llamafactory config.yaml  Import config from LLaMA-Factory
 soup migrate --from axolotl config.yml        Import config from Axolotl
 soup migrate --from unsloth notebook.ipynb    Import config from Unsloth notebook
 soup migrate --from llamafactory c.yaml --dry-run  Preview without writing
-soup recipes list                             List all 29 ready-made recipes
+soup recipes list                             List all 43 ready-made recipes
 soup recipes show llama3.1-8b-sft            Print recipe YAML
 soup recipes use llama3.1-8b-sft             Copy recipe to soup.yaml
 soup recipes search "reasoning"              Search by keyword/task/size
+soup registry push --run-id <id> --name n --tag v1  Register run (v0.26.0)
+soup registry list [--name n] [--tag v1]     List registry entries (v0.26.0)
+soup registry show <ref>                      Entry details + artifacts + ancestors
+soup registry diff <a> <b>                    Side-by-side config + eval delta
+soup registry search "medical"                Search name/base/task/notes
+soup registry promote <ref> --tag prod        Tag an entry (e.g. promote to prod)
+soup registry delete <ref> --yes              Remove entry (cascades)
+soup history <name>                           Lineage DAG tree for a name (v0.26.0)
+soup can pack --entry-id <id> --out r.can     Pack registry entry as .can (v0.26.0)
+soup can inspect r.can                        Preview manifest without extracting
+soup can verify r.can                         Verify schema + config parseability
+soup can fork r.can --out fork.can --modify training.lr=5e-5  Fork + re-pack
 soup runs                                     List training runs
 soup runs show <run_id>                       Run details + loss graph
 soup runs compare <run_1> <run_2>             Compare two runs

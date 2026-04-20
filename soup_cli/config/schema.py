@@ -82,6 +82,47 @@ class DataConfig(BaseModel):
     )
 
 
+class EvalGateConfig(BaseModel):
+    """Eval-Gated Training config (v0.26.0 Part B).
+
+    Runs a declarative eval suite at epoch boundaries and halts training
+    if any task regresses below ``regression_threshold`` vs the baseline.
+    """
+
+    enabled: bool = Field(
+        default=False,
+        description="Turn the eval gate on",
+    )
+    suite: Optional[str] = Field(
+        default=None,
+        description="Path to eval-suite YAML (evals/gate.yaml)",
+    )
+    every_n_epochs: int = Field(
+        default=1, ge=1, le=100,
+        description="Run gate every N epochs (1-100)",
+    )
+    regression_threshold: float = Field(
+        default=0.05, ge=0.0, le=1.0,
+        description="Max absolute drop vs baseline before regression fires",
+    )
+    baseline: Optional[str] = Field(
+        default=None,
+        description="registry://<id> | 'previous' | file path - scores to compare against",
+    )
+    on_regression: Literal["stop", "warn", "continue"] = Field(
+        default="stop",
+        description="Action on regression: stop training | warn only | continue",
+    )
+
+    @model_validator(mode="after")
+    def _require_suite_when_enabled(self) -> "EvalGateConfig":
+        if self.enabled and not self.suite:
+            raise ValueError(
+                "eval_gate.suite is required when eval_gate.enabled=true"
+            )
+        return self
+
+
 class TrainingConfig(BaseModel):
     epochs: int = Field(default=3, ge=1, description="Number of training epochs")
     lr: float = Field(default=2e-5, gt=0, description="Learning rate")
@@ -341,6 +382,11 @@ class TrainingConfig(BaseModel):
     early_stop_patience: int = Field(
         default=2, ge=1, le=10,
         description="Consecutive regressions before early stopping (1-10)",
+    )
+    # Eval-Gated Training — Part B of v0.26.0
+    eval_gate: Optional["EvalGateConfig"] = Field(
+        default=None,
+        description="Optional EvalGateConfig — block training on regressions",
     )
 
     @model_validator(mode="after")

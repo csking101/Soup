@@ -417,7 +417,7 @@ class RegistryStore:
                 """SELECT e.id FROM registry_entries e
                    JOIN registry_tags t ON t.entry_id = e.id
                    WHERE e.name = ? AND t.tag = ?
-                   ORDER BY e.created_at DESC LIMIT 1""",
+                   ORDER BY e.created_at DESC, e.rowid DESC LIMIT 1""",
                 (name, tag),
             ).fetchone()
             return row["id"] if row else None

@@ -1503,6 +1503,162 @@ def unregister_data(
         raise typer.Exit(1)
 
 
+@app.command(name="from-traces")
+def from_traces_cmd(
+    logs: str = typer.Option(
+        ..., "--logs", help="Path to JSONL trace log (or directory for soup-serve)",
+    ),
+    format: str = typer.Option(
+        ..., "--format", help="Trace format: langchain | openai | soup-serve",
+    ),
+    signal: str = typer.Option(
+        "thumbs_up", "--signal",
+        help="Signal to extract pairs from: thumbs_up | regenerations | user_edit",
+    ),
+    output: str = typer.Option(
+        "prefs.jsonl", "--output", "-o",
+        help="Output path for preference pairs (JSONL)",
+    ),
+) -> None:
+    """Harvest preference pairs from production traces (v0.26.0 Part C).
+
+    Prominent reminder: traces may contain sensitive user data; review
+    before sharing or uploading to external systems.
+    """
+    import json as _json
+
+    from rich.markup import escape as _escape
+    from rich.panel import Panel
+
+    from soup_cli.data.traces import (
+        SUPPORTED_FORMATS,
+        SUPPORTED_SIGNALS,
+        build_pairs,
+        parse_langchain,
+        parse_openai,
+        parse_soup_serve,
+    )
+    from soup_cli.utils.paths import is_under_cwd as _under_cwd
+
+    if format not in SUPPORTED_FORMATS:
+        console.print(
+            f"[red]Unknown format '{format}'. "
+            f"Supported: {', '.join(SUPPORTED_FORMATS)}[/]"
+        )
+        raise typer.Exit(1)
+    if signal not in SUPPORTED_SIGNALS:
+        console.print(
+            f"[red]Unknown signal '{signal}'. "
+            f"Supported: {', '.join(SUPPORTED_SIGNALS)}[/]"
+        )
+        raise typer.Exit(1)
+
+    logs_path = Path(logs)
+    if not _under_cwd(logs_path):
+        console.print(f"[red]--logs '{logs}' is outside cwd - refusing[/]")
+        raise typer.Exit(1)
+    if not logs_path.exists():
+        console.print(f"[red]--logs not found: {logs}[/]")
+        raise typer.Exit(1)
+
+    output_path = Path(output)
+    if not _under_cwd(output_path):
+        console.print(f"[red]--output '{output}' is outside cwd - refusing[/]")
+        raise typer.Exit(1)
+
+    console.print(Panel(
+        "[yellow]Traces may contain sensitive user data.[/]\n"
+        "Review the output before sharing or uploading.",
+        title="PII reminder", border_style="yellow",
+    ))
+
+    max_trace_lines = 100_000  # matches eval / human-eval caps in the project
+    events: list[dict] = []
+    if format == "soup-serve":
+        trace_iter = parse_soup_serve(str(logs_path))
+    else:
+        if logs_path.is_file():
+            with logs_path.open("r", encoding="utf-8") as fh:
+                for line_no, line in enumerate(fh, start=1):
+                    if line_no > max_trace_lines:
+                        console.print(
+                            f"[yellow]--logs exceeds cap of {max_trace_lines} "
+                            "lines; truncating.[/]"
+                        )
+                        break
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        events.append(_json.loads(line))
+                    except _json.JSONDecodeError:
+                        continue
+        if format == "langchain":
+            trace_iter = parse_langchain(events)
+        else:  # openai
+            trace_iter = parse_openai(events)
+
+    pairs = list(build_pairs(trace_iter, signal=signal))
+    with output_path.open("w", encoding="utf-8") as fh:
+        for pair in pairs:
+            fh.write(_json.dumps(pair.to_jsonl_dict(), ensure_ascii=False) + "\n")
+
+    console.print(
+        f"[green]Wrote {len(pairs)} preference pair(s)[/] to "
+        f"[cyan]{_escape(str(output_path))}[/]"
+    )
+
+
+@app.command(name="review")
+def review_cmd(
+    input_file: str = typer.Argument(
+        ..., metavar="INPUT", help="Path to preference JSONL (chosen/rejected)",
+    ),
+    sample: int = typer.Option(
+        10, "--sample", "-s",
+        help="How many pairs to preview (1-100)",
+    ),
+) -> None:
+    """Preview preference pairs for manual review."""
+    import json as _json
+
+    from rich.markup import escape as _escape
+    from rich.panel import Panel
+
+    sample = max(1, min(int(sample), 100))
+    path = Path(input_file)
+    if not path.exists():
+        console.print(f"[red]File not found:[/] {input_file}")
+        raise typer.Exit(1)
+
+    shown = 0
+    with path.open("r", encoding="utf-8") as fh:
+        for line in fh:
+            if shown >= sample:
+                break
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                entry = _json.loads(line)
+            except _json.JSONDecodeError:
+                continue
+            prompt = str(entry.get("prompt", ""))
+            chosen = str(entry.get("chosen", ""))
+            rejected = str(entry.get("rejected", ""))
+            console.print(Panel(
+                f"[bold cyan]Prompt:[/] {_escape(prompt[:400])}\n\n"
+                f"[green]Chosen:[/] {_escape(chosen[:400])}\n\n"
+                f"[red]Rejected:[/] {_escape(rejected[:400])}",
+                title=f"Pair {shown + 1}",
+                border_style="blue",
+            ))
+            shown += 1
+
+    if shown == 0:
+        console.print("[yellow]No pairs found in file.[/]")
+
+
 @app.command(name="registry")
 def list_registry():
     """List all registered datasets."""
@@ -1534,3 +1690,4 @@ def list_registry():
         )
 
     console.print(table)
+

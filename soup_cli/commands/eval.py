@@ -889,3 +889,194 @@ def _short_model_name(path: str) -> str:
     if len(parts) > 2:
         return "/".join(parts[-2:])
     return path
+
+
+# ─── soup eval gate (v0.26.0 Part B) ───
+
+
+@app.command(name="gate")
+def gate_cmd(
+    suite: str = typer.Option(
+        ..., "--suite", "-s",
+        help="Path to eval suite YAML (see evals/gate.yaml example)",
+    ),
+    baseline: Optional[str] = typer.Option(
+        None, "--baseline", "-b",
+        help="Baseline: registry://<id> or path to {name: score} JSON file",
+    ),
+    regression_threshold: float = typer.Option(
+        0.05, "--regression-threshold",
+        help="Max absolute drop vs baseline before regression fires (0.0-1.0)",
+    ),
+    model: Optional[str] = typer.Option(
+        None, "--model", "-m",
+        help="Model path or HF id to evaluate (required for live scoring)",
+    ),
+) -> None:
+    """Run an eval-gate suite standalone (post-hoc verdict)."""
+    if not 0.0 <= regression_threshold <= 1.0:
+        console.print(
+            "[red]--regression-threshold must be between 0.0 and 1.0[/]"
+        )
+        raise typer.Exit(1)
+
+    from soup_cli.eval.gate import load_suite, resolve_baseline, run_gate
+
+    try:
+        eval_suite = load_suite(suite)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Cannot load suite:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    try:
+        baseline_scores = resolve_baseline(baseline)
+    except (FileNotFoundError, ValueError) as exc:
+        console.print(f"[red]Cannot resolve baseline:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    # Without a live model we can't generate real completions; emit a stub
+    # generator so the CLI is still testable. Wiring a real model is out of
+    # scope for the v0.26.0 launch (see plan Part B).
+    if model is None:
+        console.print(
+            "[yellow]No --model given; using stub generator "
+            "(empty output per prompt) for a smoke run.[/]"
+        )
+    else:
+        console.print(
+            "[yellow]Live model scoring not yet wired; using stub. "
+            "Subscribe to v0.26.1 for real inference support.[/]"
+        )
+
+    def _stub_generate(_: str) -> str:
+        return ""
+
+    generate_fn = _stub_generate
+
+    result = run_gate(
+        eval_suite, generate_fn=generate_fn, baseline=baseline_scores,
+        regression_threshold=regression_threshold,
+    )
+
+    _print_gate_result(result)
+    raise typer.Exit(0 if result.passed else 1)
+
+
+# ─── soup eval quant-check (v0.26.0 Part D) ───
+
+
+@app.command(name="quant-check")
+def quant_check_cmd(
+    before: str = typer.Option(
+        ..., "--before",
+        help="Before-quantization model path or registry://<id>",
+    ),
+    after: str = typer.Option(
+        ..., "--after",
+        help="After-quantization model path or registry://<id>",
+    ),
+    tasks: str = typer.Option(
+        ..., "--tasks",
+        help="JSONL eval tasks file (see 'soup eval custom')",
+    ),
+    fmt: str = typer.Option(
+        "table", "--format",
+        help="Output format: table | json | markdown",
+    ),
+) -> None:
+    """Compare accuracy before vs after quantization on the same eval suite.
+
+    Runs the same JSONL eval tasks through both models sequentially (memory
+    safe) and renders a per-task delta with OK / MINOR / MAJOR verdicts.
+    Wiring live model loading is post-v0.26.0; until then, this runs with a
+    stub generator so the orchestration layer is still usable for tests and
+    CI smoke-checks.
+    """
+    from soup_cli.eval.quant_check import (
+        ensure_format,
+        is_under_cwd,
+        render,
+        resolve_model_ref,
+        run_quant_check,
+        stub_generator,
+    )
+
+    try:
+        ensure_format(fmt)
+    except ValueError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
+
+    resolved_before = resolve_model_ref(before)
+    resolved_after = resolve_model_ref(after)
+    if resolved_before is None:
+        console.print(f"[red]Cannot resolve --before: {before}[/]")
+        raise typer.Exit(1)
+    if resolved_after is None:
+        console.print(f"[red]Cannot resolve --after: {after}[/]")
+        raise typer.Exit(1)
+
+    for label, path_str in (("--before", resolved_before),
+                            ("--after", resolved_after),
+                            ("--tasks", tasks)):
+        path_obj = Path(path_str)
+        if not is_under_cwd(path_obj):
+            console.print(
+                f"[red]{label} '{path_str}' is outside cwd - refusing[/]"
+            )
+            raise typer.Exit(1)
+        if not path_obj.exists() and label == "--tasks":
+            console.print(f"[red]{label} not found: {path_str}[/]")
+            raise typer.Exit(1)
+
+    before_path = Path(resolved_before)
+    after_path = Path(resolved_after)
+    if not before_path.exists():
+        console.print(f"[red]--before not found: {resolved_before}[/]")
+        raise typer.Exit(1)
+    if not after_path.exists():
+        console.print(f"[red]--after not found: {resolved_after}[/]")
+        raise typer.Exit(1)
+
+    # Live model loading is post-v0.26.0; stub for the orchestration layer.
+    console.print(
+        "[yellow]Live model scoring not yet wired; using deterministic stub. "
+        "v0.26.1+ will plug in transformers/GGUF/AWQ backends.[/]"
+    )
+    result = run_quant_check(
+        before_gen=stub_generator("before"),
+        after_gen=stub_generator("after"),
+        tasks_file=tasks,
+    )
+    rendered = render(result, fmt=fmt)
+    if fmt == "table":
+        console.print(rendered)
+    else:
+        # Plain text (markdown / json) — skip Rich markup interpretation so
+        # pipe chars in markdown don't render as Rich tags.
+        console.print(rendered, markup=False)
+
+
+def _print_gate_result(result) -> None:
+    """Render a GateResult as a Rich table + pass/fail panel."""
+    table = Table(title="Eval gate")
+    table.add_column("Task", style="cyan")
+    table.add_column("Score", justify="right")
+    table.add_column("Threshold", justify="right")
+    table.add_column("Baseline", justify="right")
+    table.add_column("Delta", justify="right")
+    table.add_column("Verdict")
+    for row in result.task_results:
+        table.add_row(
+            row.name,
+            f"{row.score:.3f}",
+            f"{row.threshold:.3f}",
+            f"{row.baseline:.3f}" if row.baseline is not None else "-",
+            f"{row.delta:+.3f}" if row.delta is not None else "-",
+            "[green]PASS[/]" if row.passed else "[red]FAIL[/]",
+        )
+    console.print(table)
+    verdict = "[green]GATE PASSED[/]" if result.passed else "[red]GATE FAILED[/]"
+    if result.regression:
+        verdict += " [yellow](regression vs baseline)[/]"
+    console.print(Panel(verdict, border_style="green" if result.passed else "red"))

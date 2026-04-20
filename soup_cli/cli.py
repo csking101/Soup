@@ -10,6 +10,7 @@ from soup_cli.commands import (
     adapters,
     autopilot,
     bench,
+    can,
     chat,
     data,
     deploy,
@@ -95,6 +96,10 @@ app.add_typer(
     help="Model Registry: push, list, show, diff, search, promote, delete.",
 )
 app.command(name="history")(history.history)
+app.add_typer(
+    can.app, name="can",
+    help="Soup Cans: pack/inspect/verify/fork shareable .can artifacts.",
+)
 
 # Register data generate as a subcommand of data
 data.app.command(name="generate")(generate.generate)

@@ -6,7 +6,7 @@ Soup is a CLI-first LLM fine-tuning tool (v0.26.0). Python 3.9+, MIT license.
 
 ```bash
 pip install -e ".[dev]"          # Install editable + test deps
-pytest tests/ -v --tb=short      # Run all tests (2409 tests)
+pytest tests/ -v --tb=short      # Run all tests (2511 tests)
 ruff check soup_cli/ tests/      # Lint (must pass before commit)
 ruff check --fix soup_cli/ tests/  # Auto-fix lint issues
 ```
@@ -64,6 +64,8 @@ soup_cli/
     leaderboard.py     # Leaderboard aggregation, run comparison, export
     forgetting.py      # Catastrophic forgetting detection (v0.25.0)
     checkpoint_intelligence.py  # Best-checkpoint-by-quality tracker (v0.25.0)
+    gate.py            # Eval-Gated Training: EvalSuite, run_gate, resolve_baseline (v0.26.0 Part B)
+    quant_check.py     # Quant-Lobotomy Checker: classify_delta, run_quant_check (v0.26.0 Part D)
   autopilot/           # Zero-config decision engine (v0.25.0)
     analyzer.py        # Dataset / model / hardware profiling
     decisions.py       # Task / quantization / PEFT / LR / epochs / max_length picker
@@ -72,6 +74,14 @@ soup_cli/
     hashing.py         # SHA-256 of config + data + base model
     store.py           # SQLite store: CRUD, artifacts, lineage DAG, search, resolve
     diff.py            # config_diff + eval_delta helpers
+  cans/                # Shareable .can artifact format (v0.26.0 Part E)
+    schema.py          # Manifest + DataRef Pydantic models (HTTPS-only, name validation)
+    pack.py            # pack_entry, fork_can (size cap 100MB, dunder guard)
+    unpack.py          # inspect_can, read_config, safe extract (filter='data' + fallback)
+    verify.py          # VerifyReport + verify_can
+  data/traces/         # Trace-to-Preference harvester (v0.26.0 Part C)
+    parsers.py         # parse_langchain, parse_openai, parse_soup_serve
+    pair_builder.py    # build_pairs from thumbs / regenerations / user_edit
   experiment/
     tracker.py         # SQLite at ~/.soup/experiments.db (runs, metrics, eval_results)
   migrate/
@@ -107,6 +117,7 @@ soup_cli/
     ui.py              # soup ui (launches FastAPI web UI)
     registry.py        # soup registry (push/list/show/diff/search/promote/delete) — v0.26.0
     history.py         # soup history <name> (lineage DAG viewer) — v0.26.0
+    can.py             # soup can pack/inspect/verify/fork (v0.26.0 Part E)
   ui/
     app.py             # FastAPI REST API (auth token, CORS, path traversal protection)
     static/            # SPA: Dashboard, New Training, Data Explorer, Model Chat
@@ -121,6 +132,7 @@ soup_cli/
     moe.py             # MoE model detection, ScatterMoE LoRA target modules
     liger.py           # Liger Kernel detection + fused ops (RMSNorm, SwiGLU, etc.)
     flash_attn.py      # FlashAttention v2/v3 auto-detection
+    paths.py           # Cross-platform path containment (realpath + commonpath) — v0.26.0
     fsdp.py            # FSDP2 config templates (full_shard, shard_grad, offload)
     ring_attention.py   # Ring FlashAttention for sequence parallelism
     long_context.py    # RoPE scaling for 128k+ context fine-tuning
@@ -134,7 +146,7 @@ soup_cli/
     constants.py       # APP_NAME, paths, default chat template
     mlx.py             # Apple Silicon MLX detection + memory helpers (v0.25.0)
     peft_builder.py    # Unified LoRA / DoRA / VeRA / OLoRA config builder (v0.25.0)
-tests/                 # 87 test files, 2409 tests
+tests/                 # 91 test files, 2511 tests
 examples/
   configs/             # 7 production-ready YAML examples
   data/                # Sample datasets
@@ -151,6 +163,15 @@ soup registry diff     # Side-by-side config diff + eval delta between 2 entries
 soup registry promote  # Add a tag (e.g. "prod") to an existing entry
 soup registry delete   # Remove an entry (cascades to artifacts/lineage/tags)
 soup history <name>    # Lineage DAG tree for all entries with the given name
+soup train --gate <s>  # Eval-gated training: halt on regression vs baseline (v0.26.0 Part B)
+soup eval gate         # Run eval-gate suite standalone (post-hoc)
+soup eval quant-check  # Before/after quant eval (OK/MINOR/MAJOR verdict) (v0.26.0 Part D)
+soup data from-traces  # Harvest preference pairs from LangChain/OpenAI/soup-serve (v0.26.0 Part C)
+soup data review       # Preview preference pairs (JSONL)
+soup can pack          # Pack a registry entry as a shareable .can (v0.26.0 Part E)
+soup can inspect       # Preview a .can manifest without extracting
+soup can verify        # Verify schema + config parseability
+soup can fork          # Apply dotted.path=value modifications and re-pack
 soup autopilot         # Zero-config: pick task/quant/LR/epochs from data+model+goal (v0.25.0)
 soup init              # Create config (interactive or --template)
 soup train             # Main training (--config, --resume, --wandb, --tensorboard, --deepspeed, --fsdp, --yes)
@@ -216,7 +237,8 @@ soup version           # Show version (--full for details)
 - **SoupConfig**: base (required), task (sft/dpo/kto/orpo/simpo/ipo/grpo/ppo/reward_model/pretrain/embedding), modality (text/vision/audio), backend (transformers/unsloth/mlx), data, training, output, eval
 - **EvalConfig**: auto_eval, benchmarks, custom_tasks, judge
 - **DataConfig**: train, format (alpaca/sharegpt/chatml/dpo/kto/llava/sharegpt4v/plaintext/embedding/audio/tool-calling/auto), val_split, max_length, image_dir, audio_dir
-- **TrainingConfig**: epochs, lr, batch_size (int or "auto"), quantization (4bit/8bit/none), quantization_aware, optimizer, scheduler, dpo_beta, kto_beta, orpo_beta, simpo_gamma, cpo_alpha, ipo_tau, grpo_beta, num_generations, reward_fn, verifiable_domain (math/code/json_schema — v0.25.0), ppo_epochs, ppo_clip_ratio, ppo_kl_penalty, reward_model, loraplus_lr_ratio, use_galore, galore_rank, galore_update_proj_gap, galore_scale, moe_lora, moe_aux_loss_coeff, use_liger, use_flash_attn, use_ring_attention, rope_scaling_type, gradient_checkpointing, embedding_loss, embedding_margin, embedding_pooling, embedding_temperature, neftune_alpha, packing, curriculum, curriculum_metric, curriculum_buckets, loss_watchdog, loss_watchdog_threshold, loss_watchdog_patience, freeze_layers, freeze_ratio, forgetting_detection, forgetting_eval_steps, forgetting_threshold, forgetting_benchmark, forgetting_stop, checkpoint_intelligence, checkpoint_eval_steps, checkpoint_eval_metric, checkpoint_eval_tasks, checkpoint_keep_top, early_stop_on_regression, early_stop_patience (v0.25.0)
+- **TrainingConfig**: epochs, lr, batch_size (int or "auto"), quantization (4bit/8bit/none), quantization_aware, optimizer, scheduler, dpo_beta, kto_beta, orpo_beta, simpo_gamma, cpo_alpha, ipo_tau, grpo_beta, num_generations, reward_fn, verifiable_domain (math/code/json_schema — v0.25.0), ppo_epochs, ppo_clip_ratio, ppo_kl_penalty, reward_model, loraplus_lr_ratio, use_galore, galore_rank, galore_update_proj_gap, galore_scale, moe_lora, moe_aux_loss_coeff, use_liger, use_flash_attn, use_ring_attention, rope_scaling_type, gradient_checkpointing, embedding_loss, embedding_margin, embedding_pooling, embedding_temperature, neftune_alpha, packing, curriculum, curriculum_metric, curriculum_buckets, loss_watchdog, loss_watchdog_threshold, loss_watchdog_patience, freeze_layers, freeze_ratio, forgetting_detection, forgetting_eval_steps, forgetting_threshold, forgetting_benchmark, forgetting_stop, checkpoint_intelligence, checkpoint_eval_steps, checkpoint_eval_metric, checkpoint_eval_tasks, checkpoint_keep_top, early_stop_on_regression, early_stop_patience (v0.25.0), eval_gate (Optional[EvalGateConfig] — v0.26.0 Part B)
+- **EvalGateConfig** (v0.26.0 Part B): enabled, suite, every_n_epochs [1, 100], regression_threshold [0.0, 1.0], baseline (registry:// or file), on_regression (stop/warn/continue)
 - **LoraConfig**: r, alpha, dropout, target_modules, use_dora, use_rslora, use_vera, use_olora (v0.25.0)
 
 16 built-in templates: chat, code, medical, reasoning, vision, audio, kto, orpo, simpo, ipo, embedding, rlhf, pretrain, moe, longcontext, tool-calling (v0.25.0).
@@ -353,6 +375,18 @@ soup version           # Show version (--full for details)
 - **Registry lineage**: self-reference rejected; indirect cycles detected via BFS ancestor walk before insert (v0.26.0)
 - **Registry CLI**: all output passes through `rich.markup.escape` to prevent markup injection (v0.26.0)
 - **Registry resolve**: ambiguous prefix raises `AmbiguousRefError` instead of silently returning None — prevents operator confusion (v0.26.0)
+- **Eval-gate suite path**: `os.path.realpath + commonpath` containment via shared `utils/paths.py` (v0.26.0 Part B)
+- **Eval-gate callback**: structured exceptions (`ValueError`/`FileNotFoundError`/`OSError`) treated as regressions under `on_regression="stop"`; unexpected exceptions also stop; `warn`/`continue` only skip the stop action (v0.26.0 Part B)
+- **GateTask**: `tasks`/`prompts` reject null bytes; `judge_model` URL scheme allowlist (`ollama://`, `https://`, `http://localhost`/`http://127.0.0.1`) — SSRF hardening (v0.26.0 Part B)
+- **EvalGateConfig**: `regression_threshold` [0.0, 1.0], `every_n_epochs` [1, 100], `on_regression` Literal, suite required when enabled (v0.26.0 Part B)
+- **Trace harvester**: input/output path containment via shared `is_under_cwd`; trace line cap 100,000 lines to prevent OOM on production logs; `--format`/`--signal` Literal validation; PII warning panel on every run (v0.26.0 Part C)
+- **Quant-check paths**: `--before`/`--after`/`--tasks` all containment-checked; `registry://` refs resolved with optional `kinds` filter to avoid picking the wrong artifact (v0.26.0 Part D)
+- **Soup Cans Manifest**: `can_format_version==1` enforced; `name` alphanumeric+_-.; `author` max 128 chars, no null bytes / newlines; `created_at` must parse via `datetime.fromisoformat`; `description` max 4096 chars (v0.26.0 Part E)
+- **Soup Cans DataRef**: `url` HTTPS-only (http rejected); `hf_dataset` regex `[A-Za-z0-9][A-Za-z0-9_\\-./]{0,127}` (v0.26.0 Part E)
+- **Soup Cans tar safety**: `filter="data"` on Python 3.12+ with fallback only on `TypeError`/`AttributeError` (not security errors); manual path — symlink/hardlink rejection + `commonpath` check (v0.26.0 Part E)
+- **Soup Cans size cap**: 100 MB on both `pack_entry` and `fork_can` outputs (v0.26.0 Part E)
+- **Soup Cans fork modifications**: dunder keys (`__class__`, `__init__`, any `__*__`) rejected; null bytes rejected — prevents prototype pollution (v0.26.0 Part E)
+- **Soup Cans inspect/read_config**: paths must stay under cwd — prevents arbitrary tar read (v0.26.0 Part E)
 
 ## Code Conventions
 
@@ -402,7 +436,12 @@ soup version           # Show version (--full for details)
 
 **Required for every phase. Do not skip steps. Every phase = full cycle from code to PyPI.**
 
-**Multi-part phases (A, B, C…):** implement part by part. Write tests FIRST (TDD), then implement to pass them. Run `ruff check soup_cli/ tests/` + `pytest tests/ -v --tb=short` after each part to catch issues early. Only proceed to the Release Checklist below after ALL parts pass lint + tests.
+**Terminology:**
+- **"Phase"** = a single version release (e.g. v0.26.0). NOT individual sub-Parts (A/B/C/D/E).
+- **"Part"** = a chunk of work within a phase (e.g. v0.26.0 Part A = Model Registry). Parts are an internal decomposition for TDD + review efficiency, not for separate releases.
+- **One release per phase.** All Parts ship together under a single tag. Bumping version before all Parts land is fine; tagging is ONE time per phase.
+
+**Multi-part phases (A, B, C…):** implement part by part. Write tests FIRST (TDD), then implement to pass them. Run `ruff check soup_cli/ tests/` + `pytest tests/ -v --tb=short` after each part to catch issues early. Commits CAN be split per Part (for bisect clarity) but the release / tag / PyPI publish happens ONCE after all Parts pass the full checklist. Only proceed to the Release Checklist below after ALL parts pass lint + tests.
 
 ### Implementation (steps 1–4)
 
@@ -455,7 +494,7 @@ soup version           # Show version (--full for details)
 
 ### Ship (steps 14–18)
 
-14. **Commit**: one commit per phase with a descriptive message. Stage specific files, not `git add -A`. Use HEREDOC for multi-line messages. Include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`.
+14. **Commit**: one commit per phase, OR one commit per Part within a phase — whichever is clearer for `git bisect`. Rule of thumb: multi-Part phases benefit from one commit per Part (commit title: `feat(scope): <Part name> (vX.Y.Z Part A)`). Stage specific files, not `git add -A`. Use HEREDOC for multi-line messages. Include `Co-Authored-By: Claude Opus 4.6 (1M context) <noreply@anthropic.com>`. **All commits must land on `main` before step 17 (tag).**
 15. **Push**: `git push origin main`
 16. **Wait for CI to go green** before tagging. CI runs on `ubuntu-latest`, `windows-latest`, `macos-latest` × Python 3.9/3.11/3.12. Watch for:
     - Windows encoding issues → set `PYTHONUTF8=1` in workflow env
@@ -463,7 +502,7 @@ soup version           # Show version (--full for details)
     - `trl` / `transformers` upstream source files with non-ASCII without explicit encoding
     - If CI fails, fix on main before tagging; never tag a red commit
 17. **Tag**: `git tag vX.Y.Z && git push origin vX.Y.Z` — only after CI is green
-18. **Release**: `gh release create vX.Y.Z --title "vX.Y.Z — <tagline>" --notes "..."` with changelog (What's New, Install/Upgrade, Security). PyPI auto-publishes via Trusted Publisher OIDC on tag push.
+18. **Release**: `gh release create vX.Y.Z --title "vX.Y.Z — <tagline>" --notes "..."` with changelog sections: **What's New**, **Install/Upgrade**, **Security**, **Known Limitations**. PyPI auto-publishes via Trusted Publisher OIDC on tag push. The **Known Limitations** section is the source-of-truth for step 21 — every bullet there must become a tracked GitHub issue.
 
 ### Verify downstream publishes (step 19 — NEW)
 
@@ -474,8 +513,23 @@ soup version           # Show version (--full for details)
 
 ### Issue grooming (steps 20–21)
 
-20. **Close resolved issues**: search `gh issue list --state open` for issues whose asks are now shipped (new recipes, new commands, etc.) and close them with a comment pointing to the release notes and `soup <command>` examples.
-21. **File new issues for known limitations**: every documented design limitation from the review round becomes an issue with severity, proposed fix path, and acceptance criteria. Tag `help wanted` or `enhancement` as appropriate. This is how "best-effort" mitigations stay discoverable.
+20. **Close resolved issues**: search `gh issue list --state open` for issues whose asks are now shipped and close them. Use this comment template so operators get a concrete next step, not just a "closed" status:
+
+    ```
+    Shipped in vX.Y.Z. See [release notes](<link>).
+
+    Try: `soup <command> <args>`
+    ```
+
+    Fill in the exact command that resolves the ask. One line of example > three paragraphs of marketing.
+
+21. **File new issues for known limitations**: every bullet in the release's **Known Limitations** section (step 18) becomes a tracked GitHub issue with:
+    - severity (`enhancement` / `help wanted` / `bug`)
+    - milestone (next planned release, e.g. `vX.Y.Z+1`)
+    - proposed fix path
+    - acceptance criteria
+
+    **Completeness check**: after filing, run `gh issue list --milestone vX.Y.Z+1 --state open` and confirm the count matches the number of Known Limitations bullets. If it doesn't, an issue was missed — fix before closing step 21.
 
 ### CI-only / docs-only hotfixes
 
@@ -492,7 +546,7 @@ Commits that only touch `.github/`, `tests/`, or `docs/` don't ship to PyPI and 
 - Forgetting to update test counts in multiple docs after adding tests
 - Forgetting to close GitHub issues that were resolved by the release
 
-## Tests (87 test files, 2409 tests)
+## Tests (91 test files, 2511 tests)
 
 | File | Covers |
 |------|--------|
@@ -581,3 +635,7 @@ Commits that only touch `.github/`, `tests/`, or `docs/` don't ship to PyPI and 
 | test_training_intelligence.py | Forgetting detection + checkpoint intelligence + SQLite schema (Part G v0.25.0) |
 | test_autopilot.py | Autopilot: dataset/model/hardware analysis, decision engine, CLI (Part H v0.25.0) |
 | test_registry.py | Model Registry: hashing, validation, store CRUD, artifacts, lineage DAG, diff, CLI, history (Part A v0.26.0) |
+| test_eval_gate.py | Eval-Gated Training: EvalGateConfig, gate suite loading, baseline resolution, run_gate, callback integration, CLI (Part B v0.26.0) |
+| test_trace_to_pref.py | Trace-to-Preference: LangChain/OpenAI/Soup-serve parsers, pair builder, CLI with path containment (Part C v0.26.0) |
+| test_quant_check.py | Quant-Lobotomy: classify_delta boundaries, run_quant_check, resolve_model_ref with kind filter, render formats, CLI (Part D v0.26.0) |
+| test_cans.py | Soup Cans: manifest schema, pack/unpack roundtrip, tar path-traversal rejection, fork security (dunder+null byte), CLI (Part E v0.26.0) |
