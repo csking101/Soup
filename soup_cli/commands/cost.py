@@ -1,7 +1,10 @@
-"""soup cost — estimate training cost in USD."""
+"""soup cost -- estimate training cost in USD."""
+
+from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Optional
 
 import typer
 from rich.console import Console
@@ -15,7 +18,9 @@ from soup_cli.utils.profiler import (
 
 console = Console()
 
-# GPU pricing and speed multipliers (relative to A100)
+# GPU pricing and speed multipliers (relative to A100).
+# Pricing last updated: 2026-04. Actual rates change frequently --
+# treat these as rough estimates; real costs can vary +/- 30%.
 GPU_PRICING = [
     {"provider": "RunPod", "gpu": "A100 80G", "cost_per_hr": 1.89, "speed_mult": 1.0},
     {"provider": "Lambda", "gpu": "A100 40G", "cost_per_hr": 1.10, "speed_mult": 1.0},
@@ -24,9 +29,15 @@ GPU_PRICING = [
     {"provider": "CoreWeave", "gpu": "A100 80G", "cost_per_hr": 2.21, "speed_mult": 1.0},
 ]
 
+_DEFAULT_DATASET_SIZE = 10000
 
-def _get_dataset_size(cfg) -> int:
-    """Estimate dataset size."""
+
+def _get_dataset_size(cfg) -> tuple[int, bool]:
+    """Estimate training dataset size.
+
+    Returns (size, is_estimated). `is_estimated=True` means we fell back to
+    the default because the dataset could not be read; callers should warn.
+    """
     train_path = cfg.data.train
     path = Path(train_path)
 
@@ -35,40 +46,38 @@ def _get_dataset_size(cfg) -> int:
         from soup_cli.data.loader import load_raw_data
         try:
             data = load_raw_data(path)
-            # If val_split is used, training set is smaller
             split = 1.0 - cfg.data.val_split
-            return int(len(data) * split)
-        except Exception:
+            return int(len(data) * split), False
+        except (OSError, ValueError, KeyError):
             pass
 
-    # Try HF dataset (only if not a local file path with extension)
+    # HF dataset (only if not a local file path with extension)
     if not path.suffix:
         try:
             from datasets import load_dataset_builder
             builder = load_dataset_builder(train_path)
             size = builder.info.splits["train"].num_examples
             split = 1.0 - cfg.data.val_split
-            return int(size * split)
-        except Exception:
+            return int(size * split), False
+        except (OSError, ValueError, KeyError, ImportError):
             pass
 
-    # Fallback default
-    return 10000
+    return _DEFAULT_DATASET_SIZE, True
 
 
 def cost(
     config: str = typer.Option(
         "soup.yaml", "--config", "-c", help="Path to soup.yaml config file"
     ),
-    gpu: str = typer.Option(
+    gpu: Optional[str] = typer.Option(
         None, "--gpu", "-g",
         help="Filter by specific GPU (e.g., A100, H100, RTX 4090)",
     ),
     json_output: bool = typer.Option(
         False, "--json", help="Output as JSON for scripting"
     ),
-):
-    """Estimate training cost in USD."""
+) -> None:
+    """Estimate training cost in USD across cloud providers."""
     from soup_cli.config.loader import load_config
 
     config_path = Path(config)
@@ -85,8 +94,14 @@ def cost(
     else:
         batch_size = int(batch_size)
 
-    dataset_size = _get_dataset_size(cfg)
+    dataset_size, is_estimated = _get_dataset_size(cfg)
     epochs = cfg.training.epochs
+
+    if is_estimated and not json_output:
+        console.print(
+            f"[yellow]Warning:[/] Could not read training dataset; using default "
+            f"of {_DEFAULT_DATASET_SIZE:,} examples for the estimate."
+        )
 
     # Base speed (A100)
     base_tokens_per_sec = estimate_speed(
@@ -106,7 +121,6 @@ def cost(
         speed_mult = provider_info["speed_mult"]
         samples_per_sec = base_samples_per_sec * speed_mult
 
-        # Duration in minutes
         duration_mins = estimate_training_time(dataset_size, epochs, samples_per_sec)
         duration_hrs = duration_mins / 60.0
 
@@ -125,10 +139,9 @@ def cost(
         raise typer.Exit(1)
 
     if json_output:
-        console.print(json.dumps(results, indent=2))
+        console.print(json.dumps(results, indent=2), highlight=False)
         return
 
-    # Render table
     table = Table(title="Training Cost Estimate", title_justify="left", box=None, padding=(0, 2))
     table.add_column("Provider", style="cyan")
     table.add_column("GPU", style="green")
@@ -137,20 +150,19 @@ def cost(
 
     for r in results:
         cost_str = f"~${r['total_cost']:.2f}"
-
-        # Format duration to match example, e.g. (4h) or (1.5h)
-        # If it's very small, maybe (<1h)
-        if r['duration_hrs'] < 1.0:
+        if r["duration_hrs"] < 1.0:
             dur_str = "(<1h)"
         else:
             dur_str = f"({r['duration_hrs']:.0f}h)"
-
         table.add_row(
             r["provider"],
             r["gpu"],
             f"${r['cost_per_hr']:.2f}",
-            f"{cost_str} [dim]{dur_str}[/dim]"
+            f"{cost_str} [dim]{dur_str}[/dim]",
         )
 
     console.print(table)
-    console.print()
+    console.print(
+        "[dim]Note: estimates are approximate; actual costs can vary +/- 30% "
+        "depending on region, spot/on-demand pricing, and workload variance.[/dim]"
+    )

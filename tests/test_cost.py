@@ -71,7 +71,7 @@ def test_cost_with_gpu_filter(tmp_path):
     result = runner.invoke(app, ["cost", "--config", str(config_file), "--gpu", "H100"])
     assert result.exit_code == 0
     assert "H100" in result.output
-    # Assuming the mock data only has RTX 4090 and we filtered to H100
+    # Filtering to H100 must exclude other GPUs from the pricing table
     assert "RTX 4090" not in result.output
 
 
@@ -97,3 +97,40 @@ def test_cost_missing_config():
     """Test cost fails gracefully when config doesn't exist."""
     result = runner.invoke(app, ["cost", "--config", "nonexistent.yaml"])
     assert result.exit_code != 0
+
+
+def test_cost_warns_when_dataset_unreadable(tmp_path):
+    """When dataset cannot be read, user should see a fallback warning."""
+    config_file = tmp_path / "soup.yaml"
+    # train path points nowhere, so the loader cannot read it
+    config_file.write_text(
+        "base: meta-llama/Llama-3.1-8B-Instruct\n"
+        "task: sft\n"
+        "data:\n"
+        "  train: ./data/missing_train.jsonl\n"
+        "  max_length: 2048\n"
+        "training:\n"
+        "  batch_size: 4\n"
+        "output: ./output\n"
+    )
+    result = runner.invoke(app, ["cost", "--config", str(config_file)])
+    assert result.exit_code == 0
+    assert "Could not read training dataset" in result.output
+
+
+def test_cost_shows_variance_disclaimer(tmp_path):
+    """Table output must include a variance disclaimer for table consumers."""
+    config_file = tmp_path / "soup.yaml"
+    config_file.write_text(
+        "base: meta-llama/Llama-3.1-8B-Instruct\n"
+        "task: sft\n"
+        "data:\n"
+        "  train: ./data/train.jsonl\n"
+        "  max_length: 2048\n"
+        "training:\n"
+        "  batch_size: 4\n"
+        "output: ./output\n"
+    )
+    result = runner.invoke(app, ["cost", "--config", str(config_file)])
+    assert result.exit_code == 0
+    assert "estimates are approximate" in result.output
