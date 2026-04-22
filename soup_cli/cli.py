@@ -12,6 +12,7 @@ from soup_cli.commands import (
     bench,
     can,
     chat,
+    cost,
     data,
     deploy,
     diff,
@@ -56,6 +57,7 @@ app = typer.Typer(
 app.command()(init.init)
 app.command()(train.train)
 app.command()(chat.chat)
+app.command()(cost.cost)
 app.command()(push.push)
 app.command(name="export")(export.export)
 app.command()(merge.merge)
