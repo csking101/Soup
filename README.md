@@ -40,12 +40,13 @@ soup train
 
 Latest highlights only. Full history: [GitHub Releases](https://github.com/MakazhanAlpamys/Soup/releases).
 
-- **Cut Cross-Entropy (CCE)** — `training.use_cut_ce: true` fuses the LM-head + cross-entropy on large-vocab models. Saves 8-24 GB VRAM on Llama 3.1 (128k vocab) and similar.
-- **FP8 training** — `training.quantization_aware: "fp8"` enables float8 matmuls on Hopper+ (H100/H200/B100/B200) via `torchao.float8`. Bool `true` stays on the int8 QAT path.
-- **Gradient checkpointing tiers** — `training.gradient_checkpointing: selective | medium | full | auto`. `auto` picks based on detected VRAM (< 24 GB → full, 24-80 GB → medium, > 80 GB → selective).
-- **Kernel auto-composition** — `training.kernel_auto_compose: true` enumerates available kernel combos (baseline / Liger / FlashAttn / CCE) and picks the fastest.
-- **Cross-document attention masking** — `training.packing_cross_doc_attn_mask: true` with `packing: true` blocks attention from crossing document boundaries in packed sequences.
-- **Activation offloading** — `training.activation_offloading: cpu | disk` offloads saved activations to RAM or a scratch file during backward pass for small-VRAM large-batch runs.
+- **Auto-push checkpoints** — `soup train --push-as user/my-model` uploads every `save_steps` checkpoint to HuggingFace Hub as a `checkpoint-<N>` branch. Pair with `--hf-resume` to pull the latest and keep going after a crash.
+- **HuggingFace Collections** — `soup push --collection user/my-collection-abc123` groups pushed adapters into an existing Collection.
+- **Self-hosted Hub** — set `HF_ENDPOINT=https://hf.internal.example.com` and every HF operation in Soup routes there. Localhost HTTP permitted; private/RFC1918 IPs rejected.
+- **Publish HF datasets** — `soup data push --input data.jsonl --hf-dataset user/my-data` uploads a local JSONL as an HF dataset repo.
+- **Deploy HF Space** — `soup deploy hf-space --model user/my-model --space user/my-space --template gradio-chat` creates a Gradio (or Streamlit) Space wrapping your fine-tuned model in one command.
+- **Model card v2** — generated README surfaces the training config (task / base / lr / optimizer) and an optional eval scorecard; markdown-active chars are neutralised for safe HF Hub rendering.
+- **License:** Soup is now Apache-2.0 (previously MIT). Downstream redistributors must retain the `NOTICE` file per §4(d).
 
 ## Why Soup?
 
@@ -962,7 +963,60 @@ soup push --model ./output --repo your-username/my-model
 
 # Make it private
 soup push --model ./output --repo your-username/my-model --private
+
+# Group into a Collection
+soup push --model ./output --repo your-username/my-model \
+    --collection your-username/my-collection-abc123
 ```
+
+## HuggingFace Hub Deep Integration
+
+Soup treats HF Hub as a first-class artifact backend. One env var, one flag,
+no token flags to plumb — all operations respect `huggingface-cli login`
+credentials by default.
+
+```bash
+# Self-hosted Hub: set once, every command routes there.
+export HF_ENDPOINT=https://hf.internal.example.com
+
+# Auto-push each save_steps checkpoint to HF as a 'checkpoint-<N>' branch.
+soup train -c soup.yaml --push-as your-username/my-model
+
+# Resume from the latest branch pushed above.
+soup train -c soup.yaml --push-as your-username/my-model --hf-resume
+
+# Upload a local JSONL file as an HF dataset repo.
+soup data push --input train.jsonl --hf-dataset your-username/my-dataset
+
+# Wrap your fine-tuned model in a Gradio chat Space in one command.
+soup deploy hf-space \
+    --model your-username/my-model \
+    --space your-username/my-chat-space \
+    --template gradio-chat
+
+# Or a Streamlit app:
+soup deploy hf-space \
+    --model your-username/my-model \
+    --space your-username/my-chat-space \
+    --template streamlit-chat
+```
+
+**Auto-resume workflow:** if training crashes, the next `soup train ... --push-as
+... --hf-resume` call picks up the latest `checkpoint-<N>` branch from your HF
+repo and downloads it back to `output_dir`, then resumes — no manual copy /
+paste of checkpoint paths. Cwd containment and `local_dir_use_symlinks=False`
+prevent filesystem escape from a crafted repo.
+
+**Auth** follows standard HF conventions: `HF_TOKEN` env var > `HUGGINGFACE_HUB_TOKEN`
+> `~/.cache/huggingface/token` (set by `huggingface-cli login`) > `~/.huggingface/token`.
+No custom token flags. The deprecated `--token` on `soup push` still works but emits
+a warning.
+
+**Model card v2** is auto-generated on first push: it reads sidecar
+`training_config.yaml` / `soup.yaml` to surface `task` / `base` / `lr` /
+`optimizer`, and accepts an optional eval scorecard (markdown table).
+Markdown-active chars in task names and scores are neutralised for safe
+rendering on HF Hub.
 
 ## Merge LoRA Adapter
 

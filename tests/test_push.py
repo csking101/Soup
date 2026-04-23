@@ -113,6 +113,11 @@ def test_push_invalid_model_dir(tmp_path: Path):
 def test_push_no_token(tmp_path: Path, monkeypatch):
     """Should fail if no HF token is available."""
     monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("HUGGINGFACE_HUB_TOKEN", raising=False)
+    # Point HOME at an empty dir so the cached-token fallback also misses.
+    monkeypatch.setattr("pathlib.Path.home", lambda: tmp_path / "no-creds")
+    # `soup push` now requires --model under cwd.
+    monkeypatch.chdir(tmp_path)
 
     model_dir = tmp_path / "model"
     model_dir.mkdir()

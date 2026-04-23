@@ -1691,3 +1691,96 @@ def list_registry():
 
     console.print(table)
 
+
+@app.command(name="push")
+def push_dataset_cmd(
+    input_path: str = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="Path to local JSONL dataset file",
+    ),
+    hf_dataset: str = typer.Option(
+        ...,
+        "--hf-dataset",
+        help="HuggingFace dataset repo id (e.g. user/my-dataset)",
+    ),
+    private: bool = typer.Option(
+        False, "--private", help="Make the HF dataset repo private",
+    ),
+    commit_message: str = typer.Option(
+        "Upload dataset with Soup CLI",
+        "--message",
+        help="Commit message for the dataset upload",
+    ),
+):
+    """Upload a local JSONL dataset to HuggingFace Hub as a dataset repo."""
+    from soup_cli.utils.hf import (
+        get_hf_api,
+        resolve_endpoint,
+        resolve_token,
+        validate_repo_id,
+    )
+    from soup_cli.utils.paths import is_under_cwd
+
+    file_path = Path(input_path)
+    if not file_path.exists():
+        console.print(f"[red]Dataset file not found: {file_path}[/]")
+        raise typer.Exit(1)
+    if not file_path.is_file():
+        console.print(f"[red]Expected a file, got a directory: {file_path}[/]")
+        raise typer.Exit(1)
+    if not is_under_cwd(file_path):
+        console.print(
+            "[red]Dataset path must stay under the current working directory.[/]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        validate_repo_id(hf_dataset)
+    except ValueError as exc:
+        console.print(f"[red]Invalid --hf-dataset repo id:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    token = resolve_token()
+    if token is None:
+        console.print(
+            "[red]No HuggingFace token found.[/]\n"
+            "Set HF_TOKEN env var or run: [bold]huggingface-cli login[/]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        endpoint = resolve_endpoint()
+    except ValueError as exc:
+        console.print(f"[red]HF_ENDPOINT invalid:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    try:
+        api = get_hf_api(token=token, endpoint=endpoint)
+    except ImportError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
+
+    # Sanitise commit message to a single short line — prevents multi-line
+    # injection into HF commit history.
+    safe_commit = (commit_message.splitlines()[0][:200] if commit_message else "")
+    try:
+        api.create_repo(
+            repo_id=hf_dataset, repo_type="dataset",
+            private=private, exist_ok=True,
+        )
+        api.upload_file(
+            path_or_fileobj=str(file_path),
+            path_in_repo=file_path.name,
+            repo_id=hf_dataset,
+            repo_type="dataset",
+            commit_message=safe_commit,
+        )
+    except Exception as exc:
+        console.print(f"[red]Upload failed:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print(
+        f"[green]Uploaded to[/] https://huggingface.co/datasets/{hf_dataset}"
+    )

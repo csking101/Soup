@@ -1,5 +1,7 @@
 """soup train — the main training command."""
 
+from __future__ import annotations
+
 import os
 from pathlib import Path
 
@@ -77,6 +79,22 @@ def train(
             "(shortcut for training.eval_gate.enabled=true + suite=<path>)"
         ),
     ),
+    push_as: str = typer.Option(
+        None,
+        "--push-as",
+        help=(
+            "Auto-push each save_steps checkpoint to HF Hub as "
+            "'checkpoint-<step>' branch of the given repo (e.g. user/my-model)"
+        ),
+    ),
+    hf_resume: bool = typer.Option(
+        False,
+        "--hf-resume",
+        help=(
+            "Download the latest checkpoint branch from the --push-as repo "
+            "and resume from it. Requires --push-as."
+        ),
+    ),
     yes: bool = typer.Option(
         False,
         "--yes",
@@ -94,6 +112,19 @@ def train(
     # Load & validate config
     console.print(f"[dim]Loading config from {config_path}...[/]")
     cfg = load_config(config_path)
+
+    # --- --push-as / --hf-resume validation ---
+    if push_as:
+        from soup_cli.utils.hf import validate_repo_id
+
+        try:
+            validate_repo_id(push_as)
+        except ValueError as exc:
+            console.print(f"[red]Invalid --push-as repo id:[/] {exc}")
+            raise typer.Exit(1) from exc
+    if hf_resume and not push_as:
+        console.print("[red]--hf-resume requires --push-as <repo>[/]")
+        raise typer.Exit(1)
 
     # --- Eval-gate shortcut: --gate <path> sets training.eval_gate ---
     if gate:
@@ -118,6 +149,36 @@ def train(
         else:
             console.print("[red]No checkpoint found to resume from.[/]")
             raise typer.Exit(1)
+
+    # --- HF auto-resume: pull latest checkpoint branch into output dir ---
+    if hf_resume and push_as and resume_from is None:
+        from soup_cli.monitoring.hf_push import prepare_hf_resume
+        from soup_cli.utils.hf import resolve_endpoint, resolve_token
+
+        try:
+            hf_endpoint = resolve_endpoint()
+        except ValueError as exc:
+            console.print(f"[red]--hf-resume: {exc}[/]")
+            raise typer.Exit(1) from exc
+        hf_token = resolve_token()
+        if hf_token is None:
+            console.print(
+                "[yellow]--hf-resume: no HF token available; skipping auto-resume[/]"
+            )
+        else:
+            local_ckpt = prepare_hf_resume(
+                repo_id=push_as,
+                output_dir=cfg.output,
+                token=hf_token,
+                endpoint=hf_endpoint,
+            )
+            if local_ckpt:
+                resume_from = local_ckpt
+                console.print(f"[green]Resumed from HF:[/] {local_ckpt}")
+            else:
+                console.print(
+                    "[yellow]--hf-resume: no checkpoint branch found; starting fresh[/]"
+                )
 
     # --- Validate logging flags ---
     if wandb and tensorboard:
@@ -499,6 +560,33 @@ def train(
     else:
         trainer_wrapper = SFTTrainerWrapper(cfg, **trainer_kwargs)
     trainer_wrapper.setup(dataset)
+
+    # --- HF auto-push callback (Part B of v0.29.0) ---
+    if push_as:
+        from soup_cli.monitoring.hf_push import build_push_callback
+
+        push_cb = build_push_callback(
+            repo_id=push_as,
+            output_dir=cfg.output,
+            private=False,
+        )
+        if push_cb is None:
+            console.print(
+                "[yellow]--push-as: no HF token available; skipping auto-push[/]"
+            )
+        else:
+            hf_trainer = getattr(trainer_wrapper, "trainer", None)
+            if hf_trainer is not None and hasattr(hf_trainer, "add_callback"):
+                hf_trainer.add_callback(push_cb)
+                console.print(
+                    f"[green]HF auto-push enabled[/] -> {push_as} "
+                    "(one branch per save_steps)"
+                )
+            else:
+                console.print(
+                    "[yellow]--push-as: trainer does not expose add_callback; "
+                    "auto-push disabled for this run[/]"
+                )
 
     # Train with live display and experiment tracking
     display = TrainingDisplay(cfg, device_name=device_name)

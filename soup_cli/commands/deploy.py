@@ -1,4 +1,6 @@
-"""soup deploy — deploy models to inference runtimes (Ollama)."""
+"""soup deploy — deploy models to inference runtimes (Ollama, HF Spaces)."""
+
+from __future__ import annotations
 
 from pathlib import Path
 from typing import List, Optional
@@ -11,6 +13,185 @@ from rich.table import Table
 console = Console()
 
 app = typer.Typer(no_args_is_help=True)
+
+
+# ---------------------------------------------------------------------------
+# HF Space templates (Part F of v0.29.0)
+# ---------------------------------------------------------------------------
+
+_GRADIO_APP_PY = '''"""Soup CLI-generated Gradio Chat Space."""
+
+import os
+import gradio as gr
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+MODEL_ID = "{MODEL_REPO}"
+
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
+
+
+def respond(message, history):
+    messages = []
+    for user, assistant in history:
+        messages.append({{"role": "user", "content": user}})
+        messages.append({{"role": "assistant", "content": assistant}})
+    messages.append({{"role": "user", "content": message}})
+    prompt = tokenizer.apply_chat_template(
+        messages, tokenize=False, add_generation_prompt=True,
+    )
+    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+    outputs = model.generate(
+        **inputs, max_new_tokens=512, do_sample=True,
+        temperature=0.7, top_p=0.9,
+    )
+    reply = tokenizer.decode(
+        outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True,
+    )
+    return reply
+
+
+chat = gr.ChatInterface(respond, title="Soup CLI Fine-tuned Chat")
+chat.launch()
+'''
+
+_GRADIO_REQS = """gradio>=4.0.0
+transformers>=4.40.0
+torch>=2.1.0
+accelerate>=0.27.0
+"""
+
+_GRADIO_README = """---
+title: Soup Chat
+emoji: 🍲
+colorFrom: purple
+colorTo: cyan
+sdk: gradio
+sdk_version: 4.0.0
+app_file: app.py
+pinned: false
+---
+
+# Soup Chat
+
+Generated with [Soup CLI](https://github.com/MakazhanAlpamys/Soup) — model: `{MODEL_REPO}`
+"""
+
+
+_STREAMLIT_APP_PY = '''"""Soup CLI-generated Streamlit Chat Space."""
+
+import streamlit as st
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+MODEL_ID = "{MODEL_REPO}"
+
+st.set_page_config(page_title="Soup Chat", page_icon="🍲")
+st.title("Soup Chat")
+
+
+@st.cache_resource
+def load_model():
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+    model = AutoModelForCausalLM.from_pretrained(MODEL_ID, device_map="auto")
+    return tokenizer, model
+
+
+tokenizer, model = load_model()
+
+if "messages" not in st.session_state:
+    st.session_state["messages"] = []
+
+for msg in st.session_state["messages"]:
+    with st.chat_message(msg["role"]):
+        st.markdown(msg["content"])
+
+prompt = st.chat_input("Ask me anything")
+if prompt:
+    st.session_state["messages"].append({{"role": "user", "content": prompt}})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+    with st.chat_message("assistant"):
+        messages = [
+            {{"role": m["role"], "content": m["content"]}}
+            for m in st.session_state["messages"]
+        ]
+        chat_prompt = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
+        )
+        inputs = tokenizer(chat_prompt, return_tensors="pt").to(model.device)
+        outputs = model.generate(
+            **inputs, max_new_tokens=512, do_sample=True,
+            temperature=0.7, top_p=0.9,
+        )
+        reply = tokenizer.decode(
+            outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True,
+        )
+        st.markdown(reply)
+        st.session_state["messages"].append(
+            {{"role": "assistant", "content": reply}}
+        )
+'''
+
+_STREAMLIT_REQS = """streamlit>=1.30.0
+transformers>=4.40.0
+torch>=2.1.0
+accelerate>=0.27.0
+"""
+
+_STREAMLIT_README = """---
+title: Soup Chat
+emoji: 🍲
+colorFrom: purple
+colorTo: cyan
+sdk: streamlit
+sdk_version: 1.30.0
+app_file: app.py
+pinned: false
+---
+
+# Soup Chat
+
+Generated with [Soup CLI](https://github.com/MakazhanAlpamys/Soup) — model: `{MODEL_REPO}`
+"""
+
+
+HF_SPACE_TEMPLATES = {
+    "gradio-chat": {
+        "sdk": "gradio",
+        "app.py": _GRADIO_APP_PY,
+        "requirements.txt": _GRADIO_REQS,
+        "README.md": _GRADIO_README,
+    },
+    "streamlit-chat": {
+        "sdk": "streamlit",
+        "app.py": _STREAMLIT_APP_PY,
+        "requirements.txt": _STREAMLIT_REQS,
+        "README.md": _STREAMLIT_README,
+    },
+}
+
+
+def render_space_template(template: str, model_repo: str) -> dict[str, str]:
+    """Render the Space template files with ``model_repo`` substituted.
+
+    Raises ``ValueError`` when the template is unknown or the model repo id
+    fails validation — injection-proof since repo ids are already a
+    restrictive alphanumeric subset after validation.
+    """
+    from soup_cli.utils.hf import validate_repo_id
+
+    validate_repo_id(model_repo)
+    if template not in HF_SPACE_TEMPLATES:
+        raise ValueError(
+            f"Unknown template: {template!r}. "
+            f"Available: {', '.join(HF_SPACE_TEMPLATES.keys())}"
+        )
+    spec = HF_SPACE_TEMPLATES[template]
+    return {
+        "app.py": spec["app.py"].replace("{MODEL_REPO}", model_repo),
+        "requirements.txt": spec["requirements.txt"],
+        "README.md": spec["README.md"].replace("{MODEL_REPO}", model_repo),
+    }
 
 
 @app.command()
@@ -230,6 +411,129 @@ def ollama(
         Panel(
             f"Run: [bold]ollama run {name}[/]",
             title="[bold green]Deploy Complete![/]",
+        )
+    )
+
+
+@app.command(name="hf-space")
+def hf_space(
+    model: str = typer.Option(
+        ...,
+        "--model",
+        "-m",
+        help="HuggingFace model repo id to wrap in the Space (e.g. user/my-model)",
+    ),
+    space: str = typer.Option(
+        ...,
+        "--space",
+        "-s",
+        help="HuggingFace Space repo id to create (e.g. user/my-space)",
+    ),
+    template: str = typer.Option(
+        "gradio-chat",
+        "--template",
+        "-t",
+        help=f"Space template: {', '.join(HF_SPACE_TEMPLATES.keys())}",
+    ),
+    private: bool = typer.Option(
+        False, "--private", help="Create the Space as private",
+    ),
+    yes: bool = typer.Option(
+        False, "--yes", "-y", help="Skip confirmation",
+    ),
+):
+    """Create a HuggingFace Space wrapping a fine-tuned model.
+
+    Uploads an app.py, requirements.txt, and README.md rendered from the
+    chosen template. Supports gradio-chat and streamlit-chat.
+    """
+    from soup_cli.utils.hf import (
+        get_hf_api,
+        resolve_endpoint,
+        resolve_token,
+        validate_repo_id,
+    )
+
+    # --- Validate space repo id up-front; model is validated by
+    # render_space_template which is the authoritative entry point. ---
+    try:
+        validate_repo_id(space)
+    except ValueError as exc:
+        console.print(f"[red]Invalid --space repo id:[/] {exc}")
+        raise typer.Exit(1) from exc
+    if template not in HF_SPACE_TEMPLATES:
+        console.print(
+            f"[red]Unknown template: {template}[/]\n"
+            f"Available: {', '.join(HF_SPACE_TEMPLATES.keys())}"
+        )
+        raise typer.Exit(1)
+
+    # --- Resolve credentials ---
+    token = resolve_token()
+    if token is None:
+        console.print(
+            "[red]No HuggingFace token found.[/]\n"
+            "Set HF_TOKEN env var or run: [bold]huggingface-cli login[/]"
+        )
+        raise typer.Exit(1)
+
+    try:
+        endpoint = resolve_endpoint()
+    except ValueError as exc:
+        console.print(f"[red]HF_ENDPOINT invalid:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    # --- Render template files ---
+    try:
+        files = render_space_template(template, model_repo=model)
+    except ValueError as exc:
+        console.print(f"[red]Template render failed:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print(
+        Panel(
+            f"Space:    [bold]{space}[/]\n"
+            f"Model:    [bold]{model}[/]\n"
+            f"Template: [bold]{template}[/]\n"
+            f"Private:  [bold]{private}[/]",
+            title="Deploy HuggingFace Space",
+        )
+    )
+    if not yes:
+        confirm = typer.confirm("Create Space and upload files?", default=True)
+        if not confirm:
+            raise typer.Exit(0)
+
+    # --- Create repo + upload ---
+    try:
+        api = get_hf_api(token=token, endpoint=endpoint)
+    except ImportError as exc:
+        console.print(f"[red]{exc}[/]")
+        raise typer.Exit(1) from exc
+
+    try:
+        api.create_repo(
+            repo_id=space, repo_type="space",
+            space_sdk=HF_SPACE_TEMPLATES[template]["sdk"],
+            private=private, exist_ok=True,
+        )
+        for in_repo_name, content in files.items():
+            api.upload_file(
+                path_or_fileobj=content.encode("utf-8"),
+                path_in_repo=in_repo_name,
+                repo_id=space,
+                repo_type="space",
+                commit_message=f"Soup CLI: add {in_repo_name}",
+            )
+    except Exception as exc:
+        console.print(f"[red]Space deploy failed:[/] {exc}")
+        raise typer.Exit(1) from exc
+
+    console.print(
+        Panel(
+            f"Space:  [bold blue]https://huggingface.co/spaces/{space}[/]\n"
+            f"Model:  [bold]{model}[/]",
+            title="[bold green]Space Deployed![/]",
         )
     )
 

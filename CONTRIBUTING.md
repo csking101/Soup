@@ -106,10 +106,10 @@ soup_cli/
   registry/           - Model Registry (hashing, store, diff) (v0.26.0)
   cans/               - Shareable .can artifact format (v0.26.0)
   data/traces/        - Trace-to-Preference harvester (v0.26.0)
-  utils/              - GPU, errors, MoE, GaLore, QAT, Unsloth, vLLM, SGLang, Liger, FlashAttn, FSDP, Ring Attention, long-context, quality, curriculum, freeze, dataset-registry, mlx, peft_builder, paths, topology, launcher, mii, pipeline, cut_ce, fp8, gradient_ckpt, kernel_picker, cross_doc_attn, activation_offload
+  utils/              - GPU, errors, MoE, GaLore, QAT, Unsloth, vLLM, SGLang, Liger, FlashAttn, FSDP, Ring Attention, long-context, quality, curriculum, freeze, dataset-registry, mlx, peft_builder, paths, topology, launcher, mii, pipeline, cut_ce, fp8, gradient_ckpt, kernel_picker, cross_doc_attn, activation_offload, hf
   ui/                 - Web UI (FastAPI + HTML/JS SPA)
 
-tests/                - Test suite (93 files, 2677 tests)
+tests/                - Test suite (94 files, 2801 tests)
 examples/             - Real-world config examples and datasets
 ```
 
@@ -223,6 +223,14 @@ pytest tests/ --cov=soup_cli --cov-report=html
 | test_data_augment.py | Data augmentation: rephrase/translate/style strategies, CLI, security (v0.25.0) |
 | test_training_intelligence.py | Forgetting detection + checkpoint intelligence + SQLite (v0.25.0) |
 | test_autopilot.py | Autopilot: analyzers, decision engine, CLI (v0.25.0) |
+| test_registry.py | Model Registry: hashing, store CRUD, artifacts, lineage DAG, diff, CLI, history (v0.26.0) |
+| test_eval_gate.py | Eval-Gated Training: config, suite loading, baseline, callback, CLI (v0.26.0) |
+| test_trace_to_pref.py | Trace-to-Preference: LangChain/OpenAI/Soup-serve parsers, pair builder, CLI (v0.26.0) |
+| test_quant_check.py | Quant-Lobotomy: classify_delta, resolve_model_ref, render formats, CLI (v0.26.0) |
+| test_cans.py | Soup Cans: manifest schema, pack/unpack, tar traversal, fork security, CLI (v0.26.0) |
+| test_multi_gpu.py | Multi-GPU Mastery: topology, --gpus, accelerate launcher, ZeRO++, FSDP2+compile, pipeline (v0.27.0) |
+| test_training_speed.py | Training Speed & Memory: CCE, FP8, grad-ckpt tiers, kernel picker, cross-doc attn, activation offload (v0.28.0) |
+| test_hf_integration.py | HF Hub Deep Integration: token/endpoint/repo_id, auto-push callback, model card v2, collections, data push, HF Spaces, private-IP SSRF (v0.29.0) |
 
 ## Making Changes
 
