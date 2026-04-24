@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import sys
 import types
 from unittest.mock import MagicMock
@@ -13,6 +14,16 @@ from typer.testing import CliRunner
 from soup_cli.cli import app
 
 runner = CliRunner()
+
+# Strip ANSI colour / style escape sequences before substring assertions —
+# macOS/Windows Typer runs inject them even under pytest, and they split
+# tokens like ``--push-as`` into ``-`` + ``-push-as`` across escape groups.
+# Same pattern as ``test_eval_gate.py`` after the 899ad8e fix.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _plain(text: str) -> str:
+    return _ANSI_RE.sub("", text or "")
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +117,12 @@ class TestResolveEndpoint:
         assert resolve_endpoint() == "http://localhost:8080"
 
     def test_endpoint_rejects_null_byte(self, monkeypatch):
-        monkeypatch.setenv("HF_ENDPOINT", "https://hf.example.com\x00")
+        # OS-level setenv rejects null bytes on macOS/Windows before
+        # ``resolve_endpoint`` ever runs, so patch the dict directly.
+        monkeypatch.setattr(
+            "soup_cli.utils.hf.os.environ",
+            {"HF_ENDPOINT": "https://hf.example.com\x00"},
+        )
         from soup_cli.utils.hf import resolve_endpoint
 
         with pytest.raises(ValueError):
@@ -214,8 +230,7 @@ class TestGetHfApi:
 class TestPushAsCLIFlag:
     def test_train_shows_push_as_flag_in_help(self):
         result = runner.invoke(app, ["train", "--help"])
-        out = result.output
-        assert "--push-as" in out
+        assert "--push-as" in _plain(result.output)
 
     def test_push_as_rejects_invalid_repo(self, tmp_path, monkeypatch):
         cfg = tmp_path / "soup.yaml"
@@ -443,7 +458,7 @@ class TestModelCardV2:
 class TestCollections:
     def test_push_shows_collection_flag_in_help(self):
         result = runner.invoke(app, ["push", "--help"])
-        assert "--collection" in result.output
+        assert "--collection" in _plain(result.output)
 
     def test_add_to_collection_calls_api(self, monkeypatch):
         from soup_cli.utils.hf import add_to_collection
@@ -496,7 +511,7 @@ class TestDataPush:
     def test_push_subcommand_exists(self):
         result = runner.invoke(app, ["data", "push", "--help"])
         assert result.exit_code == 0, (result.output, repr(result.exception))
-        assert "--hf-dataset" in result.output
+        assert "--hf-dataset" in _plain(result.output)
 
     def test_push_rejects_missing_file(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -604,13 +619,14 @@ class TestDataPush:
 class TestDeployHfSpace:
     def test_hf_space_command_registered(self):
         result = runner.invoke(app, ["deploy", "--help"])
-        assert "hf-space" in result.output
+        assert "hf-space" in _plain(result.output)
 
     def test_hf_space_help_shows_flags(self):
         result = runner.invoke(app, ["deploy", "hf-space", "--help"])
         assert result.exit_code == 0, (result.output, repr(result.exception))
-        assert "--model" in result.output
-        assert "--template" in result.output
+        plain = _plain(result.output)
+        assert "--model" in plain
+        assert "--template" in plain
 
     def test_hf_space_rejects_invalid_repo(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
@@ -740,8 +756,7 @@ class TestDeployHfSpace:
 class TestAutoResume:
     def test_train_help_shows_hf_resume(self):
         result = runner.invoke(app, ["train", "--help"])
-        out = result.output
-        assert "--hf-resume" in out or "hf-resume" in out.lower().replace("-", "")
+        assert "--hf-resume" in _plain(result.output)
 
     def test_prepare_hf_resume_downloads_latest(self, tmp_path, monkeypatch):
         from soup_cli.monitoring.hf_push import prepare_hf_resume
