@@ -12,7 +12,6 @@ from __future__ import annotations
 import os
 import stat
 import sys
-from unittest.mock import patch
 
 import pytest
 
@@ -115,19 +114,25 @@ class TestCodeExecIsolationStrategy:
         strategy = _get_isolation_strategy()
         assert strategy in {"namespaces", "sandbox-exec", "best-effort"}
 
-    def test_isolation_strategy_linux_with_unshare(self):
+    def test_isolation_strategy_linux_with_unshare(self, monkeypatch):
         from soup_cli.trainer import rewards
 
-        with patch.object(sys, "platform", "linux"), \
-                patch("os.unshare", create=True) as mock_unshare:
-            mock_unshare.return_value = None
-            strategy = rewards._get_isolation_strategy.__wrapped__() \
-                if hasattr(rewards._get_isolation_strategy, "__wrapped__") \
-                else rewards._get_isolation_strategy()
-            # Either the cached call or fresh call is acceptable; what matters
-            # is that the strategy on a Linux host with os.unshare available
-            # is reachable.
-            assert strategy in {"namespaces", "best-effort"}
+        # Use _compute_isolation_strategy (uncached) like the other tests so
+        # the sys.platform patch actually takes effect — _get_isolation_strategy
+        # may return a cached value populated on a different platform during
+        # earlier tests / on the macOS / Windows CI runner.
+        monkeypatch.setattr(sys, "platform", "linux")
+        # Inject a fake os.unshare so the namespaces branch is reachable
+        # regardless of the host kernel.
+        monkeypatch.setattr(os, "unshare", lambda *_a, **_k: None,
+                            raising=False)
+        if hasattr(rewards, "_ISOLATION_STRATEGY_CACHE"):
+            rewards._ISOLATION_STRATEGY_CACHE = None
+        strategy = rewards._compute_isolation_strategy()
+        # On a Linux-shaped host with os.unshare present, the strategy must
+        # be "namespaces". The "best-effort" branch is covered by the
+        # separate "linux_unshare_unavailable" test.
+        assert strategy == "namespaces"
 
     def test_isolation_strategy_macos_with_sandbox_exec(self, monkeypatch):
         import shutil as shutil_mod
