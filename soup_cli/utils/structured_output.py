@@ -92,6 +92,106 @@ def is_lmfe_available() -> bool:
         return False
 
 
+def build_logits_processors(
+    constraint: Optional[dict], tokenizer: Any,
+) -> list:
+    """Build a list of HF ``LogitsProcessor`` instances for ``constraint``.
+
+    Returns an empty list when:
+      - constraint is None / off
+      - neither ``outlines`` nor ``lm-format-enforcer`` is installed
+      - the chosen library cannot construct a processor for the given kind
+        (we degrade to free-form rather than crashing the request)
+
+    The returned list can be passed directly to
+    ``model.generate(..., logits_processor=...)``.
+
+    Security: this function never executes user-supplied code. The schema
+    and regex are already validated upstream by ``validate_json_schema`` /
+    ``validate_regex_pattern``.
+    """
+    if constraint is None:
+        return []
+    kind = constraint.get("kind")
+    if kind not in ("json_schema", "regex"):
+        return []
+
+    # Prefer outlines (broader coverage); fall back to lm-format-enforcer.
+    if is_outlines_available():
+        try:
+            return _build_outlines_processors(constraint, tokenizer)
+        except Exception:  # noqa: BLE001 — degrade to free-form rather than 500
+            return []
+    if is_lmfe_available():
+        try:
+            return _build_lmfe_processors(constraint, tokenizer)
+        except Exception:  # noqa: BLE001
+            return []
+    return []
+
+
+def _build_outlines_processors(constraint: dict, tokenizer: Any) -> list:
+    """Best-effort outlines integration. Schema-driver may be missing on
+    older outlines builds so we try multiple entry points."""
+    import outlines  # type: ignore
+
+    kind = constraint["kind"]
+    if kind == "json_schema":
+        builder = (
+            getattr(outlines, "JsonSchema", None)
+            or getattr(outlines, "regex", None)
+        )
+        if builder is None:
+            return []
+        # outlines >= 0.1: outlines.processors.JSONLogitsProcessor
+        proc_factory = getattr(
+            __import__("outlines.processors", fromlist=["JSONLogitsProcessor"]),
+            "JSONLogitsProcessor", None,
+        )
+        if proc_factory is None:
+            return []
+        return [proc_factory(constraint["schema"], tokenizer)]
+    if kind == "regex":
+        proc_factory = getattr(
+            __import__("outlines.processors", fromlist=["RegexLogitsProcessor"]),
+            "RegexLogitsProcessor", None,
+        )
+        if proc_factory is None:
+            return []
+        return [proc_factory(constraint["pattern"], tokenizer)]
+    return []
+
+
+def _build_lmfe_processors(constraint: dict, tokenizer: Any) -> list:
+    """lm-format-enforcer integration."""
+    from lmformatenforcer import (  # type: ignore
+        JsonSchemaParser,
+        RegexParser,
+    )
+    from lmformatenforcer.integrations.transformers import (  # type: ignore
+        build_transformers_prefix_allowed_tokens_fn,
+    )
+    from transformers import LogitsProcessorList
+
+    kind = constraint["kind"]
+    if kind == "json_schema":
+        parser = JsonSchemaParser(constraint["schema"])
+    elif kind == "regex":
+        parser = RegexParser(constraint["pattern"])
+    else:
+        return []
+
+    fn = build_transformers_prefix_allowed_tokens_fn(tokenizer, parser)
+    # PrefixConstrainedLogitsProcessor wants num_beams. We use 1 (greedy /
+    # standard sampling) for chat completions.
+    from transformers import PrefixConstrainedLogitsProcessor
+
+    proc = PrefixConstrainedLogitsProcessor(fn, 1)
+    processors = LogitsProcessorList()
+    processors.append(proc)
+    return list(processors)
+
+
 def build_constraint(
     mode: Mode,
     json_schema: Optional[dict],

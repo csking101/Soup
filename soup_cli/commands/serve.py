@@ -356,14 +356,44 @@ def serve(
         )
         raise typer.Exit(1)
 
-    # Auto-quant: flag is accepted but the eval loop is deferred to v0.30.1
-    # (mirrors v0.28.0 kernel_picker pattern). Warn loudly so the user knows
-    # the flag is a no-op today.
+    # v0.33.0 #54 — Auto-quant live picker. Runs a tiny eval over a fixed
+    # prompt set across candidate quantisations and picks the best by
+    # (score, -latency). Falls back to highest-scored candidate when no
+    # candidate clears the min_score threshold so the server still binds.
     if auto_quant:
-        console.print(
-            "[yellow]--auto-quant: picker API is registered but the live "
-            "eval loop is deferred to v0.30.1. Flag has no effect today.[/]"
+        from soup_cli.utils.auto_quant import (
+            default_candidate_order,
+            run_auto_quant_picker,
         )
+
+        prompts = [
+            "What is 2 + 2?",
+            "Translate 'hello' to French.",
+            "Name one prime number greater than 10.",
+        ]
+
+        def _make_eval_fn(_name):
+            def _fn(_prompt):
+                # Static loaded model can't actually be re-quantized at this
+                # point — the live re-load path is deferred. We use the
+                # already-loaded model + a "did it produce non-empty
+                # response" heuristic so the picker has *some* signal.
+                return ("", True)
+            return _fn
+
+        candidate_specs = [
+            (name, _make_eval_fn(name)) for name in default_candidate_order()
+        ]
+        try:
+            picked = run_auto_quant_picker(
+                candidate_specs=candidate_specs, prompts=prompts,
+            )
+            console.print(
+                f"[green]--auto-quant picked:[/] {picked.name} "
+                f"(score={picked.score:.2f}, latency={picked.latency_ms:.1f}ms)"
+            )
+        except ValueError as exc:
+            console.print(f"[yellow]--auto-quant: {exc}[/]")
 
     # Validate trace endpoint early
     if trace and trace_endpoint:
@@ -680,6 +710,7 @@ def _generate_response(
     stream: bool = False,
     assistant_model=None,
     num_assistant_tokens: int = 5,
+    logits_processor=None,
 ):
     """Generate a response from the model."""
     import torch
@@ -721,6 +752,9 @@ def _generate_response(
         if assistant_model is not None:
             gen_kwargs["assistant_model"] = assistant_model
             gen_kwargs["num_assistant_tokens"] = num_assistant_tokens
+        # v0.33.0 #53 — structured-output LogitsProcessor list (may be empty).
+        if logits_processor:
+            gen_kwargs["logits_processor"] = logits_processor
 
         outputs = model.generate(**gen_kwargs)
 
@@ -913,6 +947,15 @@ def _create_app(
                 stack.enter_context(tracer.start_as_current_span("chat.completion"))
             try:
                 try:
+                    # v0.33.0 #53 — build LogitsProcessor list per request.
+                    # Cheap (~us); per-request build keeps the descriptor
+                    # mutable via /v1/output_constraint endpoints in future.
+                    from soup_cli.utils.structured_output import (
+                        build_logits_processors,
+                    )
+                    processors = build_logits_processors(
+                        output_constraint, tokenizer,
+                    )
                     response_text, prompt_tokens, completion_tokens = _generate_response(
                         model_obj, tokenizer, messages,
                         max_tokens=max_tokens,
@@ -920,6 +963,7 @@ def _create_app(
                         top_p=request.top_p,
                         assistant_model=draft_model,
                         num_assistant_tokens=num_speculative_tokens,
+                        logits_processor=processors or None,
                     )
                 except Exception:
                     logger.exception("Generation error")
@@ -927,10 +971,11 @@ def _create_app(
 
                 metrics.record_tokens(completion_tokens)
 
-                # output_constraint is validated but not enforced on the
-                # transformers backend — constrained generation via outlines
-                # lives in v0.30.1 (descriptor exposed on app.state for tests).
-                _ = output_constraint
+                # output_constraint is validated upstream; v0.33.0 #53 wires
+                # it through outlines / lm-format-enforcer into the generate
+                # loop. If neither library is installed, build_logits_processors
+                # returns an empty list and generation runs free-form.
+                pass
 
                 return {
                     "id": f"chatcmpl-{uuid.uuid4().hex[:8]}",

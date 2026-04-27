@@ -82,3 +82,73 @@ def pick_best(
         if cand.latency_ms < best.latency_ms:
             best = cand
     return best
+
+
+def evaluate_candidate(
+    name: str, *,
+    eval_fn,
+    prompts,
+    min_correct_fraction: float = 0.5,
+) -> Candidate:
+    """Run ``eval_fn(prompt) -> (response, correct_bool)`` over a small prompt
+    set, time it, and produce a Candidate.
+
+    Latency is mean per-prompt ms. Score is the fraction correct. ``ok`` is
+    True when score >= ``min_correct_fraction``.
+
+    Robust to ``eval_fn`` crashes — any prompt that raises sets ``ok=False``
+    and continues so a single bad prompt doesn't disqualify a candidate that
+    works on the rest.
+    """
+    import time as _time
+
+    if not prompts:
+        raise ValueError("evaluate_candidate requires at least one prompt")
+
+    correct = 0
+    total = 0
+    started = _time.perf_counter()
+    crashed = False
+    for prompt in prompts:
+        total += 1
+        try:
+            _resp, hit = eval_fn(prompt)
+        except Exception:  # noqa: BLE001 — surface as eval failure
+            crashed = True
+            continue
+        if hit:
+            correct += 1
+    elapsed_ms = (_time.perf_counter() - started) * 1000.0 / max(1, total)
+    score = correct / total
+    return Candidate(
+        name=name,
+        score=score,
+        latency_ms=elapsed_ms,
+        ok=(not crashed) and (score >= min_correct_fraction),
+    )
+
+
+def run_auto_quant_picker(
+    *, candidate_specs, prompts, min_score: float = 0.90,
+) -> Candidate:
+    """Run the full pick: evaluate each candidate, pick best by score+latency.
+
+    ``candidate_specs`` is a sequence of ``(name, eval_fn)`` pairs. Each
+    ``eval_fn`` takes a prompt and returns ``(response, correct_bool)``.
+
+    Falls back to the highest-scoring candidate (regardless of threshold)
+    when no candidate passes ``min_score``, so the server can still bind a
+    port. The caller is expected to log the choice.
+    """
+    candidates = [
+        evaluate_candidate(name, eval_fn=fn, prompts=prompts)
+        for name, fn in candidate_specs
+    ]
+    try:
+        return pick_best(candidates, min_score=min_score)
+    except ValueError:
+        # Soft fallback: pick the highest-scored candidate so the server
+        # still has a valid choice. Documented as advisory in serve.py.
+        ok_candidates = [c for c in candidates if c.ok]
+        pool = ok_candidates or candidates
+        return max(pool, key=lambda c: (c.score, -c.latency_ms))
