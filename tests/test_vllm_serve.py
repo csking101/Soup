@@ -504,6 +504,7 @@ class TestServeVllmIntegration:
                 speculative_model=None,
                 num_speculative_tokens=5,
                 enable_prefix_caching=False,
+                quantization=None,  # v0.35.0 #61 — auto-quant default
             )
             mock_create_app.assert_called_once()
 

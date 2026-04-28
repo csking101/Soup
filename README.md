@@ -40,15 +40,14 @@ soup train
 
 Latest highlights only. Full history: [GitHub Releases](https://github.com/MakazhanAlpamys/Soup/releases).
 
-**v0.34.0 — Observability & Dev UX**: when training goes wrong, Soup tells you *why* instead of dumping a stack trace.
+**v0.35.0 — Trainer Coverage**: every training task now uses every speed/memory feature — finishing what v0.28, v0.30, and v0.33 started.
 
-- **`soup why`** — heuristic explainer over the most recent (or named) run. Detects NaN / Inf loss, plateaus (loss flat for ≥30 steps), divergence (loss > 3× initial), high gradient norm, and out-of-band learning rates — and tells you the next thing to try, in plain English.
-- **`soup tui`** — full-screen Textual dashboard for runs + live metrics. Two-pane layout (run list + detail), keyboard-driven (`r` refresh, `q` quit). Optional dep: `pip install soup-cli[tui]`.
-- **`.crash` bundles** — when training fails, Soup auto-writes a self-contained `.crash` JSON next to the run (config + last-50 metric rows + GPU state + env summary + redacted error trace + `<redacted>` for any `hf_*` / `sk-*` / `Bearer` token). Ready to attach to a GitHub issue without leaking secrets.
-- **`soup runs replay <id>`** — re-renders the summary panel + loss curve from SQLite history. Auto-downsamples long runs to ≤2000 points so the chart stays readable.
-- **`soup train --profile`** — records a `torch.profiler` Chrome-trace JSON to `<output>/profiles/<run_id>.trace.json` over an early-steps window (configurable schedule). Open in `chrome://tracing` or Perfetto.
-- **Per-run cost tracking** — `soup runs show` now prints an estimated `$` per run from the captured GPU device name × duration. Prices are rough mid-2026 ballparks; `—` for CPU / MPS / unknown GPUs (no fabricated zeros).
-- **`--log-level quiet|normal|verbose|debug`** — global flag wires a Rich-formatted logger on the `soup` namespace. DEBUG enables timestamps and module paths; QUIET silences info/warning chatter.
+- **v0.28 features wired into 8 more trainers** — `use_cut_ce`, `quantization_aware="fp8"`, `kernel_auto_compose`, and `activation_offloading` are now live across DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, Reward-Model, and Embedding (in addition to SFT and pretraining). The schema-gate that previously rejected these flags on non-SFT trainers is lifted; only the Apple Silicon MLX backend still rejects them (no equivalent kernels).
+- **Auto-quant actually swaps the model** — `soup serve --auto-quant` now forwards the picked candidate's quantization (`awq` / `gptq` / `fp8`) to the vLLM engine via an explicit `quantization` parameter, rather than printing the choice and serving the original fp16. Includes a fallback queue (`try_reload_with_fallback`) so a missing AWQ kernel automatically falls back to the next-highest-scored candidate instead of crashing the bind.
+- **Kernel benchmark warm-up runs inside the trainer** — when `kernel_auto_compose=True`, Soup now runs a forward-only timing loop on the trainer's actual model to feed real measurements into `pick_best_kernel`. Forward-only under `torch.no_grad()` so the live training model's gradients are NOT polluted (this was a critical-class bug fixed pre-tag).
+- **fp8 / int8 QAT guard** — six trainer wrappers had `if tcfg.quantization_aware:` without excluding `"fp8"`, which would silently route the FP8 string into the legacy int8 QAT path. Fixed.
+- **40-case smoke matrix** — every trainer × every v0.28 feature is exercised on every CI matrix job (no more "wired in theory, broken in practice" risk).
+- **Distinct error messages** — schema-gate rejection now names the actual reason (MLX backend vs unknown task) so you don't waste time blaming MLX for a non-MLX failure.
 
 ## Why Soup?
 
@@ -427,7 +426,7 @@ training:
   quantization: none        # FP8 converts linears directly; no bnb 4bit needed
 ```
 
-Bool `true` stays on the int8 QAT path for backward compatibility. FP8 requires CUDA + Hopper+ (compute capability ≥ 9.0) and is rejected on unsloth/mlx backends. Wired for `task: sft` only in this release — full multi-trainer support ships in v0.28.1.
+Bool `true` stays on the int8 QAT path for backward compatibility. FP8 requires CUDA + Hopper+ (compute capability ≥ 9.0) and is rejected on unsloth/mlx backends. Wired across every transformer-backend trainer (SFT, DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, Reward-Model, Embedding, Pretrain).
 
 ## Cut Cross-Entropy (Large-Vocab Models)
 
@@ -442,7 +441,7 @@ training:
   use_cut_ce: true   # Patches the CE kernel before model load
 ```
 
-Architecture detection matches on the model name's last path component (`meta-llama/Llama-3.1-8B` → llama patcher) so org prefixes don't trigger the wrong recipe. Saves 8-24 GB VRAM at common batch × seq shapes. Not compatible with unsloth (own CE kernel) or mlx. Wired for `task: sft` only in this release — full multi-trainer support ships in v0.28.1.
+Architecture detection matches on the model name's last path component (`meta-llama/Llama-3.1-8B` → llama patcher) so org prefixes don't trigger the wrong recipe. Saves 8-24 GB VRAM at common batch × seq shapes. Not compatible with unsloth (own CE kernel) or mlx. Wired across every transformer-backend trainer (SFT, DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, Reward-Model, Embedding, Pretrain) — note that PPO has its own forward loop so cut_ce no-ops gracefully there.
 
 ## Gradient Checkpointing Tiers
 
@@ -470,7 +469,7 @@ training:
   kernel_auto_compose: true
 ```
 
-Enumerates baseline / Liger / FlashAttention / Cut-Cross-Entropy combos, benchmarks each briefly, and adopts the fastest. Falls back to baseline on CPU and backs off for unsloth/mlx backends (both manage kernels internally). Raises an error — rather than silently promoting a random combo — if benchmarking produces no finite timings. Wired for `task: sft` only in this release — full multi-trainer support ships in v0.28.1.
+Enumerates baseline / Liger / FlashAttention / Cut-Cross-Entropy combos, benchmarks each briefly on the trainer's actual model (forward-only under `torch.no_grad()` so live gradients aren't polluted), and adopts the fastest. Falls back to baseline on CPU and backs off for unsloth/mlx backends (both manage kernels internally). Wired across every transformer-backend trainer (SFT, DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, Reward-Model, Embedding, Pretrain).
 
 ## Cross-Document Attention Masking
 
@@ -495,7 +494,7 @@ training:
 
 `cpu` moves saved tensors to RAM (fast, bounded by system RAM); `disk` writes them to a scratch dir under the training output directory (slower, bounded by free disk). Scratch paths are containment-checked vs the current working directory, `torch.load(weights_only=True)` prevents arbitrary Python deserialization on reload, and the context manager best-effort cleans up scratch files on normal exit **and** on crash.
 
-Not compatible with unsloth (own memory manager) or mlx. Wired for `task: sft` only in this release — full multi-trainer support ships in v0.28.1.
+Not compatible with unsloth (own memory manager) or mlx. Wired across every transformer-backend trainer (SFT, DPO, GRPO, KTO, ORPO, SimPO, IPO, PPO, Reward-Model, Embedding, Pretrain).
 
 ## DPO Training
 

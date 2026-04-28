@@ -246,11 +246,19 @@ class GRPOTrainerWrapper:
         )
         self.model = get_peft_model(self.model, lora_config)
 
-        # QAT — insert fake quantization ops after LoRA
-        if tcfg.quantization_aware:
+        # QAT — insert fake quantization ops after LoRA. The "fp8" variant
+        # is FP8 training (handled by apply_v028_speed_memory), not int8 QAT.
+        if tcfg.quantization_aware and tcfg.quantization_aware != "fp8":
             from soup_cli.utils.qat import prepare_model_for_qat
 
             self.model = prepare_model_for_qat(self.model)
+
+        # v0.35.0 #60 — multi-trainer wiring of v0.28.0 speed/memory features.
+        from soup_cli.utils.v028_features import apply_v028_speed_memory
+        apply_v028_speed_memory(
+            model=self.model, tcfg=tcfg, base_model=cfg.base,
+            console=console, device=self.device, backend=cfg.backend,
+        )
 
     def _setup_unsloth(self, cfg, tcfg):
         """Load model via unsloth FastLanguageModel (2-5x faster)."""
@@ -292,7 +300,12 @@ class GRPOTrainerWrapper:
                 )
             )
 
-        self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        from soup_cli.utils.v028_features import activation_offloading_context
+
+        with activation_offloading_context(
+            self.config.training, self._output_dir,
+        ):
+            self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         duration = time.time() - start
 
         # Save final model (LoRA adapter)

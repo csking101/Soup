@@ -849,35 +849,47 @@ class TestV028SFTOnlyValidator:
         )
         assert cfg.training.use_cut_ce is True
 
-    def test_fp8_rejected_on_grpo(self):
-        with pytest.raises(ValidationError) as exc:
-            SoupConfig(
-                base="m",
-                task="grpo",
-                data={"train": "./d.jsonl"},
-                training={"quantization_aware": "fp8"},
-            )
-        assert "fp8" in str(exc.value)
+    def test_fp8_now_accepted_on_grpo(self):
+        # v0.35.0 #60 — every transformer-backend trainer now supported.
+        cfg = SoupConfig(
+            base="m",
+            task="grpo",
+            data={"train": "./d.jsonl"},
+            training={"quantization_aware": "fp8"},
+        )
+        assert cfg.training.quantization_aware == "fp8"
 
-    def test_activation_offloading_rejected_on_ppo(self):
-        with pytest.raises(ValidationError) as exc:
-            SoupConfig(
-                base="m",
-                task="ppo",
-                data={"train": "./d.jsonl"},
-                training={"activation_offloading": "cpu"},
-            )
-        assert "activation_offloading" in str(exc.value)
+    def test_activation_offloading_now_accepted_on_ppo(self):
+        # v0.35.0 #60 — PPO accepts activation_offloading.
+        cfg = SoupConfig(
+            base="m",
+            task="ppo",
+            data={"train": "./d.jsonl"},
+            training={"activation_offloading": "cpu"},
+        )
+        assert cfg.training.activation_offloading == "cpu"
 
-    def test_kernel_auto_compose_rejected_on_kto(self):
+    def test_kernel_auto_compose_now_accepted_on_kto(self):
+        # v0.35.0 #60 — KTO accepts kernel_auto_compose.
+        cfg = SoupConfig(
+            base="m",
+            task="kto",
+            data={"train": "./d.jsonl", "format": "kto"},
+            training={"kernel_auto_compose": True},
+        )
+        assert cfg.training.kernel_auto_compose is True
+
+    def test_v028_features_still_rejected_on_mlx_backend(self):
+        # MLX backend has no equivalent kernels — gate must still fire.
         with pytest.raises(ValidationError) as exc:
             SoupConfig(
                 base="m",
-                task="kto",
-                data={"train": "./d.jsonl", "format": "kto"},
-                training={"kernel_auto_compose": True},
+                task="sft",
+                backend="mlx",
+                data={"train": "./d.jsonl"},
+                training={"use_cut_ce": True},
             )
-        assert "kernel_auto_compose" in str(exc.value)
+        assert "mlx" in str(exc.value).lower()
 
     def test_sft_accepts_all_features(self):
         """SFT task should accept every v0.28.0 flag (happy path)."""

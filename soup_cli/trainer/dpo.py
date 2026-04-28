@@ -203,7 +203,8 @@ class DPOTrainerWrapper:
         # v0.33.0 #43 — multi-trainer wiring of v0.28.0 speed/memory features.
         from soup_cli.utils.v028_features import apply_v028_speed_memory
         apply_v028_speed_memory(
-            model=self.model, tcfg=tcfg, base_model=cfg.base, console=console,
+            model=self.model, tcfg=tcfg, base_model=cfg.base,
+            console=console, device=self.device, backend=cfg.backend,
         )
 
     def _setup_unsloth(self, cfg, tcfg):
@@ -246,7 +247,12 @@ class DPOTrainerWrapper:
                 )
             )
 
-        self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        from soup_cli.utils.v028_features import activation_offloading_context
+
+        with activation_offloading_context(
+            self.config.training, self._output_dir,
+        ):
+            self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         duration = time.time() - start
 
         # Save final model (LoRA adapter)

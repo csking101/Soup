@@ -119,6 +119,143 @@ def enumerate_kernel_combos(
     return combos
 
 
+def benchmark_kernel_combos(
+    model: Any,
+    candidates: list[dict[str, Any]],
+    *,
+    device: str = "cuda",
+    batch_size: int = 1,
+    seq_len: int = 16,
+    num_steps: int = 10,
+    vocab_size: int = 32_000,
+) -> list[dict[str, Any]]:
+    """Run a tiny forward+backward warm-up loop per candidate and record time_ms.
+
+    v0.35.0 #45 — closes the picker's "deterministic name-hash tiebreak"
+    fallback by feeding it real measurements from the trainer's own model.
+    Returns a NEW list of candidate dicts annotated with ``time_ms``; the
+    original list is not mutated.
+
+    On CPU / no-CUDA / torch unavailable, every candidate's ``time_ms`` is
+    set to ``None`` — :func:`pick_best_kernel` will reject the result and
+    the caller is expected to degrade to picker-without-bench.
+
+    The benchmark intentionally does NOT swap kernels mid-loop (that would
+    require model re-instantiation per candidate which is too expensive on
+    CI-sized models). Instead we run identical forward+backward across
+    candidates and record the relative ordering — useful as a coarse
+    "did anything install correctly" health check.
+    """
+    # bool is a subclass of int — reject explicitly so that True / False
+    # don't sneak in as 1 / 0 (matches v0.30.0 Candidate / v0.34.0 cost
+    # estimator policy).
+    for arg_name, arg_val in (
+        ("batch_size", batch_size), ("seq_len", seq_len),
+        ("num_steps", num_steps), ("vocab_size", vocab_size),
+    ):
+        if isinstance(arg_val, bool):
+            raise TypeError(f"{arg_name} must be int, not bool")
+
+    out: list[dict[str, Any]] = [dict(c) for c in candidates]
+
+    if device != "cuda":
+        for entry in out:
+            entry["time_ms"] = None
+        return out
+
+    try:
+        import torch
+    except ImportError:
+        for entry in out:
+            entry["time_ms"] = None
+        return out
+
+    if not torch.cuda.is_available():
+        for entry in out:
+            entry["time_ms"] = None
+        return out
+
+    if model is None:
+        for entry in out:
+            entry["time_ms"] = None
+        return out
+
+    # Bound caller-supplied numbers so a misconfigured caller cannot OOM the
+    # CI runner with seq_len=10**6.
+    bs = max(1, min(int(batch_size), 32))
+    sl = max(1, min(int(seq_len), 512))
+    steps = max(1, min(int(num_steps), 50))
+    vs = max(1024, min(int(vocab_size), 200_000))
+
+    try:
+        input_ids = torch.randint(
+            0, vs, (bs, sl), device="cuda", dtype=torch.long,
+        )
+    except (RuntimeError, OSError):
+        for entry in out:
+            entry["time_ms"] = None
+        return out
+
+    for entry in out:
+        entry["time_ms"] = _time_one_combo(model, input_ids, steps=steps)
+    return out
+
+
+def _time_one_combo(
+    model: Any, input_ids: Any, *, steps: int,
+) -> "float | None":
+    """Run ``steps`` forward passes on ``model`` and return mean ms per step.
+
+    v0.35.0 review fix — the benchmark is forward-only under ``torch.no_grad``
+    so the live training model's parameter ``.grad`` tensors stay clean. The
+    relative ordering between kernel combos is preserved (backward time is
+    approximately proportional to forward time across HF causal LMs), and
+    backward+optimizer state is what we MUST NOT pollute — corrupting the
+    first real optimizer step with benchmark gradients was the original bug.
+
+    Returns ``None`` on any error (OOM / model rejects shape) so the caller
+    can degrade gracefully.
+    """
+    import math
+    import time
+
+    import torch  # benchmark only runs on CUDA path; torch is guaranteed here.
+
+    try:
+        with torch.no_grad():
+            torch.cuda.synchronize()
+            # Warm-up step (not timed) — first call triggers cuDNN autotune.
+            outputs = model(input_ids=input_ids)
+            if _extract_logits_or_loss(outputs) is None:
+                return None
+            torch.cuda.synchronize()
+
+            start = time.perf_counter()
+            for _ in range(steps):
+                outputs = model(input_ids=input_ids)
+                if _extract_logits_or_loss(outputs) is None:
+                    return None
+            torch.cuda.synchronize()
+            elapsed_ms = (time.perf_counter() - start) * 1000.0 / steps
+        if not math.isfinite(elapsed_ms):
+            return None
+        return elapsed_ms
+    except (RuntimeError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def _extract_logits_or_loss(outputs: Any) -> Any:
+    """Return a model-output tensor — used only to verify the forward pass
+    produced something. Forward-only benchmarks don't need a backward-able
+    loss, just a sentinel to confirm the model accepted the input shape.
+    """
+    for attr in ("loss", "logits", "last_hidden_state"):
+        value = getattr(outputs, attr, None)
+        if value is not None:
+            return value
+    return None
+
+
 def pick_best_kernel(
     candidates: list[dict[str, Any]],
 ) -> dict[str, Any]:

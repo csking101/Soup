@@ -110,7 +110,7 @@ soup_cli/
   utils/              - GPU, errors, MoE, GaLore, QAT, Unsloth, vLLM, SGLang, Liger, FlashAttn, FSDP, Ring Attention, long-context, quality, curriculum, freeze, dataset-registry, mlx, peft_builder, paths, topology, launcher, mii, pipeline, cut_ce, fp8, gradient_ckpt, kernel_picker, cross_doc_attn, activation_offload, hf, spec_pairing, structured_output, metrics, tracing, auto_quant, lr_finder, grad_accum, mixed_precision, warmup, spike_recovery, convergence, v028_features
   ui/                 - Web UI (FastAPI + HTML/JS SPA)
 
-tests/                - Test suite (111 files, 3928 tests)
+tests/                - Test suite (112 files, 4115 tests)
 examples/             - Real-world config examples and datasets
 ```
 
@@ -249,6 +249,7 @@ pytest tests/ --cov=soup_cli --cov-report=html
 | test_replay.py | `soup runs replay`: summarise + downsample + CLI rendering (v0.34.0 Part E) |
 | test_profiling.py | Auto-profiling: ProfilerSchedule + path containment + torch-less degradation (v0.34.0 Part F) |
 | test_tui.py | `soup tui`: CLI bounds + missing-textual error + row builders (v0.34.0 Part G) |
+| test_trainer_coverage_v035.py | Multi-trainer v0.28.0 wiring smoke matrix: every trainer × every speed/memory feature + auto-quant translators + try_reload_with_fallback + benchmark_kernel_combos + schema-gate lift (v0.35.0 Parts A / B / C / D — #60, #61, #45) |
 
 ## Making Changes
 

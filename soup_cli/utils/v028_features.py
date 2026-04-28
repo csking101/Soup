@@ -14,7 +14,9 @@ this single helper.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any, Optional
+import contextlib
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, Iterator, Optional
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -28,6 +30,8 @@ def apply_v028_speed_memory(
     tcfg: "TrainingConfig",
     base_model: str,
     console: Optional["Console"] = None,
+    device: str = "cpu",
+    backend: str = "transformers",
 ) -> dict[str, bool]:
     """Apply Cut-CE / FP8 / kernel-auto-compose features to ``model``.
 
@@ -81,22 +85,85 @@ def apply_v028_speed_memory(
 
     # --- Kernel auto-compose -------------------------------------------------
     if getattr(tcfg, "kernel_auto_compose", False):
-        try:
-            from soup_cli.utils.kernel_picker import (
-                enumerate_candidates,
-                pick_best_kernel,
-            )
-            candidates = list(enumerate_candidates())
-            picked = pick_best_kernel(candidates)
-            applied["kernel_auto_compose"] = True
-            _say(f"Kernel auto-compose picked: {picked.name}")
-        except Exception:  # noqa: BLE001 — picker may be benchmark-blocked
+        picked_name = _bench_and_pick_kernel(
+            model=model, device=device, backend=backend,
+        )
+        if picked_name is None:
             _say(
                 "Kernel auto-compose: benchmarking unavailable on this host",
                 style="yellow",
             )
+        else:
+            applied["kernel_auto_compose"] = True
+            _say(f"Kernel auto-compose picked: {picked_name}")
 
     return applied
+
+
+def _bench_and_pick_kernel(
+    *, model: Any, device: str, backend: str,
+) -> Optional[str]:
+    """v0.35.0 #45 — benchmark candidate kernel combos and return the
+    picked combo's name. Returns ``None`` on any benchmark / pick failure
+    so the caller can degrade gracefully (no kernel_auto_compose flag set).
+    """
+    try:
+        from soup_cli.utils.kernel_picker import (
+            benchmark_kernel_combos,
+            enumerate_kernel_combos,
+            pick_best_kernel,
+        )
+        candidates = enumerate_kernel_combos(backend=backend, device=device)
+        # On CPU / unsloth / mlx the candidate list is just [baseline]; no
+        # benchmark needed — picker would raise on all-None times. Skip.
+        if len(candidates) <= 1:
+            return None
+        timed = benchmark_kernel_combos(
+            model=model, candidates=candidates, device=device,
+        )
+        picked = pick_best_kernel(timed)
+        # Picker returns either a dict (current shape) or an object with
+        # ``.name`` (legacy / namespace shape) — handle both defensively.
+        if isinstance(picked, dict):
+            return str(picked.get("name", "unknown"))
+        return str(getattr(picked, "name", "unknown"))
+    except Exception:  # noqa: BLE001 — picker is best-effort
+        return None
+
+
+@contextlib.contextmanager
+def activation_offloading_context(
+    tcfg: "TrainingConfig", output_dir: str,
+) -> Iterator[None]:
+    """Wrap a trainer's ``trainer.train()`` call with activation offloading.
+
+    Centralises the cwd-containment guard for ``activation_offloading="disk"``
+    (defence-in-depth — caller's ``cfg.output`` is also validated upstream)
+    and the ``offload_context`` setup. ``None`` and ``"cpu"`` modes pass
+    through to ``offload_context`` directly.
+
+    Raises ``ValueError`` when ``activation_offloading="disk"`` and
+    ``output_dir`` is outside the current working directory.
+    """
+    from soup_cli.utils.activation_offload import offload_context
+    from soup_cli.utils.paths import is_under_cwd
+
+    save_dir: Optional[str] = None
+    mode = getattr(tcfg, "activation_offloading", None)
+    if mode == "disk":
+        if not is_under_cwd(output_dir):
+            # Reduce to basename so $HOME / absolute paths don't leak (matches
+            # the v0.34.0 crash.py policy).
+            import os as _os
+
+            raise ValueError(
+                "activation_offloading='disk' requires the training output "
+                "dir to be under the current working directory; got "
+                f"basename={_os.path.basename(output_dir)!r}"
+            )
+        save_dir = str(Path(output_dir) / "_activation_offload")
+    with offload_context(mode, save_dir=save_dir):
+        yield
 
 
 def supports_v028_features(task: str) -> bool:
@@ -104,9 +171,22 @@ def supports_v028_features(task: str) -> bool:
 
     Every task that calls :func:`apply_v028_speed_memory` should be listed
     here so config validation can advise users on tasks that would silently
-    no-op.
+    no-op. v0.35.0 (#60) extends coverage from {sft, dpo, pretrain} to
+    every transformer-backend trainer.
     """
-    return task in {"sft", "dpo", "pretrain"}
+    return task in {
+        "sft",
+        "dpo",
+        "pretrain",
+        "grpo",
+        "kto",
+        "orpo",
+        "simpo",
+        "ipo",
+        "ppo",
+        "reward_model",
+        "embedding",
+    }
 
 
 def warn_unsupported_features(
@@ -114,7 +194,10 @@ def warn_unsupported_features(
 ) -> Optional[str]:
     """Return a human warning if non-v0.28.0-wired tasks set v0.28.0 flags.
 
-    Returns None when nothing to warn about.
+    Returns None when nothing to warn about. v0.35.0 #60 expanded coverage
+    to every transformer-backend trainer; this helper now only fires for
+    truly-unsupported tasks (e.g. a hypothetical future task or an MLX
+    backend route).
     """
     if supports_v028_features(task):
         return None
@@ -130,8 +213,7 @@ def warn_unsupported_features(
     if not issues:
         return None
     return (
-        f"v0.28.0 speed/memory features {issues} are not yet wired for "
-        f"task={task!r} (live in: sft, dpo, pretrain). Flags will be "
-        "silently ignored. Multi-trainer expansion is tracked in "
-        "release notes."
+        f"v0.28.0 speed/memory features {issues} are not wired for "
+        f"task={task!r}. Flags will be silently ignored. See "
+        "supports_v028_features() for the current supported task list."
     )

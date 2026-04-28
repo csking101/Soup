@@ -218,6 +218,14 @@ class EmbeddingTrainerWrapper:
         )
         self.model = get_peft_model(self.model, lora_config)
 
+        # v0.35.0 #60 — multi-trainer wiring of v0.28.0 speed/memory features.
+        # Embedding does not run cross-doc-mask paths; that flag no-ops.
+        from soup_cli.utils.v028_features import apply_v028_speed_memory
+        apply_v028_speed_memory(
+            model=self.model, tcfg=tcfg, base_model=cfg.base,
+            console=console, device=self.device, backend=cfg.backend,
+        )
+
     def _setup_unsloth(self, cfg: SoupConfig, tcfg: TrainingConfig) -> None:
         """Load model via unsloth FastLanguageModel (2-5x faster)."""
         from soup_cli.utils.unsloth import load_model_and_tokenizer
@@ -262,7 +270,12 @@ class EmbeddingTrainerWrapper:
                 )
             )
 
-        self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
+        from soup_cli.utils.v028_features import activation_offloading_context
+
+        with activation_offloading_context(
+            self.config.training, self._output_dir,
+        ):
+            self.trainer.train(resume_from_checkpoint=resume_from_checkpoint)
         duration = time.time() - start
 
         self.trainer.save_model(self._output_dir)

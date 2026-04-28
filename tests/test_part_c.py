@@ -59,14 +59,18 @@ class TestApplyV028SpeedMemory:
         )
         assert result["cut_ce"] is False
 
-    def test_supports_v028_features_extends_to_dpo_pretrain(self):
+    def test_supports_v028_features_extends_to_all_transformer_trainers(self):
+        """v0.35.0 #60 expanded support from {sft, dpo, pretrain} to every
+        transformer-backend trainer."""
         from soup_cli.utils.v028_features import supports_v028_features
 
-        for task in ("sft", "dpo", "pretrain"):
+        for task in (
+            "sft", "dpo", "pretrain", "grpo", "kto", "orpo",
+            "simpo", "ipo", "ppo", "reward_model", "embedding",
+        ):
             assert supports_v028_features(task) is True
-        for task in ("grpo", "kto", "orpo", "simpo", "ipo", "ppo",
-                     "reward_model", "embedding"):
-            assert supports_v028_features(task) is False
+        # Unknown / future tasks default to False
+        assert supports_v028_features("nonexistent") is False
 
     def test_warn_unsupported_returns_none_for_supported(self):
         from soup_cli.utils.v028_features import warn_unsupported_features
@@ -75,17 +79,20 @@ class TestApplyV028SpeedMemory:
             use_cut_ce=True, quantization_aware="fp8",
             kernel_auto_compose=True, activation_offloading="cpu",
         )
-        assert warn_unsupported_features(tcfg, "sft") is None
-        assert warn_unsupported_features(tcfg, "dpo") is None
+        for task in (
+            "sft", "dpo", "pretrain", "grpo", "kto", "orpo",
+            "simpo", "ipo", "ppo", "reward_model", "embedding",
+        ):
+            assert warn_unsupported_features(tcfg, task) is None
 
-    def test_warn_unsupported_lists_offenders_for_unsupported(self):
+    def test_warn_unsupported_lists_offenders_for_unknown_task(self):
         from soup_cli.utils.v028_features import warn_unsupported_features
 
         tcfg = SimpleNamespace(
             use_cut_ce=True, quantization_aware="fp8",
             kernel_auto_compose=False, activation_offloading=None,
         )
-        msg = warn_unsupported_features(tcfg, "kto")
+        msg = warn_unsupported_features(tcfg, "future_task")
         assert msg is not None
         assert "use_cut_ce" in msg
         assert "fp8" in msg
@@ -118,9 +125,16 @@ class TestSchemaGateExpanded:
         cfg = self._config("pretrain", use_cut_ce=True)
         assert cfg.task == "pretrain"
 
-    def test_kto_still_rejects_v028_features(self):
-        with pytest.raises(Exception, match="v0.28.0"):
-            self._config("kto", use_cut_ce=True)
+    def test_kto_now_accepts_v028_features(self):
+        """v0.35.0 #60 lifted the SFT-only schema gate; KTO now accepts."""
+        cfg = self._config("kto", use_cut_ce=True)
+        assert cfg.task == "kto"
+        assert cfg.training.use_cut_ce is True
+
+    def test_grpo_now_accepts_v028_features(self):
+        cfg = self._config("grpo", quantization_aware="fp8")
+        assert cfg.task == "grpo"
+        assert cfg.training.quantization_aware == "fp8"
 
 
 # ---------------------------------------------------------------------------

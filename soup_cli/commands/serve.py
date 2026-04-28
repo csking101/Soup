@@ -373,13 +373,17 @@ def serve(
         )
         raise typer.Exit(1)
 
-    # v0.33.0 #54 — Auto-quant live picker. Runs a tiny eval over a fixed
-    # prompt set across candidate quantisations and picks the best by
-    # (score, -latency). Falls back to highest-scored candidate when no
-    # candidate clears the min_score threshold so the server still binds.
+    # v0.33.0 #54 / v0.35.0 #61 — Auto-quant live picker. Runs a tiny eval
+    # over a fixed prompt set across candidate quantisations, picks the best
+    # by (score, -latency), then forwards the picked candidate's quantization
+    # kwargs to the backend engine instantiation. Falls back to highest-
+    # scored candidate when no candidate clears min_score (run_auto_quant_picker
+    # policy).
+    auto_quant_kwargs: dict = {}
     if auto_quant:
         from soup_cli.utils.auto_quant import (
             default_candidate_order,
+            quant_name_to_vllm_kwargs,
             run_auto_quant_picker,
         )
 
@@ -391,10 +395,10 @@ def serve(
 
         def _make_eval_fn(_name):
             def _fn(_prompt):
-                # Static loaded model can't actually be re-quantized at this
-                # point — the live re-load path is deferred. We use the
-                # already-loaded model + a "did it produce non-empty
-                # response" heuristic so the picker has *some* signal.
+                # Pre-bind eval still uses a heuristic — the engine isn't up
+                # yet. The point of the picker is to translate this signal +
+                # candidate ordering into engine kwargs that the real bind
+                # will use. A live in-engine eval refresh remains future work.
                 return ("", True)
             return _fn
 
@@ -409,8 +413,22 @@ def serve(
                 f"[green]--auto-quant picked:[/] {picked.name} "
                 f"(score={picked.score:.2f}, latency={picked.latency_ms:.1f}ms)"
             )
+            # Forward the chosen quant into the backend engine. vLLM only for
+            # now — transformers/sglang use bitsandbytes paths handled at
+            # checkpoint-load time and are not currently picker-driven.
+            if backend == "vllm":
+                from rich.markup import escape
+
+                auto_quant_kwargs = quant_name_to_vllm_kwargs(picked.name)
+                if auto_quant_kwargs:
+                    console.print(
+                        "[green]--auto-quant binding vLLM with:[/] "
+                        + escape(repr(auto_quant_kwargs))
+                    )
         except ValueError as exc:
-            console.print(f"[yellow]--auto-quant: {exc}[/]")
+            from rich.markup import escape as _esc
+
+            console.print(f"[yellow]--auto-quant: {_esc(str(exc))}[/]")
 
     # Validate trace endpoint early
     if trace and trace_endpoint:
@@ -440,6 +458,7 @@ def serve(
             speculative_model=speculative_model,
             num_speculative_tokens=num_speculative_tokens,
             enable_prefix_caching=prefix_cache,
+            quantization=auto_quant_kwargs.get("quantization"),
         )
     elif backend == "sglang":
         app = _serve_sglang(
@@ -570,6 +589,7 @@ def _serve_vllm(
     speculative_model: Optional[str] = None,
     num_speculative_tokens: int = 5,
     enable_prefix_caching: bool = False,
+    quantization: Optional[str] = None,
 ):
     """Set up vLLM engine and create FastAPI app."""
     from soup_cli.utils.vllm import create_vllm_app, create_vllm_engine
@@ -584,6 +604,7 @@ def _serve_vllm(
         speculative_model=speculative_model,
         num_speculative_tokens=num_speculative_tokens,
         enable_prefix_caching=enable_prefix_caching,
+        quantization=quantization,
     )
     console.print("[bold green]vLLM engine ready![/]")
 

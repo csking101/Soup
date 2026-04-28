@@ -611,17 +611,14 @@ class SoupConfig(BaseModel):
 
     @model_validator(mode="after")
     def _validate_v028_speed_memory_supported_tasks(self) -> "SoupConfig":
-        """v0.28.0 speed/memory features (#43, v0.33.0): supported tasks now
-        include sft, dpo, pretrain. Other tasks still receive the
-        TrainingConfig but do NOT call the apply helpers — emit an explicit
-        ValueError to prevent silent no-ops.
-
-        Multi-trainer expansion to GRPO/KTO/ORPO/SimPO/IPO/PPO/RewardModel/
-        Embedding is tracked as a follow-up.
+        """v0.28.0 speed/memory features: every transformer-backend trainer
+        is wired in v0.35.0 (#60). MLX backend trainers are still
+        unsupported. Emit a precise ValueError that names the actual reason
+        (MLX backend vs unknown task) so users get the right fix.
         """
         from soup_cli.utils.v028_features import supports_v028_features
 
-        if supports_v028_features(self.task):
+        if supports_v028_features(self.task) and self.backend != "mlx":
             return self
         tcfg = self.training
         offenders: list[str] = []
@@ -633,15 +630,21 @@ class SoupConfig(BaseModel):
             offenders.append("activation_offloading")
         if tcfg.kernel_auto_compose:
             offenders.append("kernel_auto_compose")
-        if offenders:
+        if not offenders:
+            return self
+        # Distinct reasons get distinct messages so users don't waste time
+        # blaming MLX when their task is the actual offender.
+        if self.backend == "mlx":
             raise ValueError(
-                f"v0.28.0 features {offenders} are only wired for tasks "
-                f"sft/dpo/pretrain in this release; got task={self.task!r}. "
-                "Multi-trainer expansion to GRPO/KTO/ORPO/SimPO/IPO/PPO/"
-                "RewardModel/Embedding is tracked as a follow-up. Either "
-                "switch to a supported task or remove these flags."
+                f"v0.28.0 features {offenders} are not supported on the "
+                f"Apple Silicon mlx backend (no equivalent kernels). "
+                "Switch to backend='transformers' or remove these flags."
             )
-        return self
+        raise ValueError(
+            f"v0.28.0 features {offenders} are not wired for "
+            f"task={self.task!r}. Supported tasks: see "
+            "soup_cli.utils.v028_features.supports_v028_features."
+        )
 
     @model_validator(mode="after")
     def _validate_mlx_task_support(self) -> "SoupConfig":

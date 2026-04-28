@@ -37,6 +37,7 @@ def create_vllm_engine(
     speculative_model: Optional[str] = None,
     num_speculative_tokens: int = 5,
     enable_prefix_caching: bool = False,
+    quantization: Optional[str] = None,
 ):
     """Create a vLLM AsyncLLMEngine for serving.
 
@@ -83,6 +84,17 @@ def create_vllm_engine(
         if max_model_len is not None:
             engine_args.max_model_len = max_model_len
         engine_model_name = model_path
+
+    # v0.35.0 #61 — Auto-quant live picker forwards the chosen quant here.
+    # vLLM accepts ``quantization`` on AsyncEngineArgs (string: awq/gptq/fp8).
+    # ``None`` is the default (baseline / model's native dtype).
+    if quantization:
+        if quantization not in ("awq", "gptq", "fp8"):
+            raise ValueError(
+                f"quantization must be one of awq/gptq/fp8 or None, "
+                f"got {quantization!r}"
+            )
+        engine_args.quantization = quantization
 
     # Speculative decoding — use a smaller draft model for faster inference
     if speculative_model:

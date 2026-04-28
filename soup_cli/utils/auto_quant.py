@@ -10,7 +10,7 @@ from __future__ import annotations
 import math
 import re
 from dataclasses import dataclass
-from typing import Iterable
+from typing import Any, Callable, Iterable
 
 _VALID_NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 _DEFAULT_ORDER = ("gguf", "awq", "gptq", "fp8", "none")
@@ -137,6 +137,115 @@ def evaluate_candidate(
         score=score,
         latency_ms=elapsed_ms,
         ok=(not crashed) and (score >= min_correct_fraction),
+    )
+
+
+def quant_name_to_vllm_kwargs(name: str) -> dict[str, str]:
+    """v0.35.0 #61 — translate a picker candidate name into vLLM engine kwargs.
+
+    Returns a dict suitable to splat into ``AsyncLLMEngine.from_engine_args``.
+    Unknown / pass-through names return ``{}`` so the engine uses its default
+    (i.e. baseline / no quantization).
+    """
+    _validate_name(name)
+    mapping: dict[str, dict[str, str]] = {
+        "awq": {"quantization": "awq"},
+        "gptq": {"quantization": "gptq"},
+        "fp8": {"quantization": "fp8"},
+        # GGUF needs a path swap, not a kwarg — caller must handle separately.
+        "gguf": {},
+        "none": {},
+    }
+    return dict(mapping.get(name, {}))
+
+
+def quant_name_to_bnb_kwargs(name: str) -> dict[str, bool]:
+    """v0.35.0 #61 — translate a picker name into transformers BnB kwargs.
+
+    Returns ``{"load_in_4bit": True}`` for awq/gptq (treated as 4-bit-class),
+    and ``{}`` for fp8 / gguf / none / unknown — those formats are not
+    expressible via BitsAndBytesConfig and are handled either by the engine
+    directly (fp8) or via a path swap (gguf). Caller wraps these into a
+    ``BitsAndBytesConfig``.
+    """
+    _validate_name(name)
+    if name in ("awq", "gptq"):
+        return {"load_in_4bit": True}
+    return {}
+
+
+def free_engine(engine: Any) -> None:
+    """v0.35.0 #61 — best-effort engine release before re-instantiation.
+
+    .. important::
+       The caller is responsible for releasing their own reference *before*
+       calling this helper — Python's ``del`` on a function parameter only
+       removes the local binding, it cannot drop the caller's reference.
+       Idiomatic use::
+
+           free_engine(engine)
+           engine = None  # caller drops their reference too
+
+       This function exists primarily to invoke ``torch.cuda.empty_cache()``
+       after the caller has already nulled out their reference. The
+       parameter is accepted only so the call-site reads naturally.
+
+    Failure to invoke ``empty_cache`` is a soft advisory — caller should
+    NOT block on it.
+    """
+    del engine  # local binding only — see docstring caveat
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    except (ImportError, AttributeError, RuntimeError):
+        pass
+
+
+def try_reload_with_fallback(
+    *,
+    picked: "Candidate",
+    all_candidates: list["Candidate"],
+    build_fn: Callable[[str], Any],
+) -> tuple["Candidate", Any]:
+    """v0.35.0 #61 — attempt ``build_fn(picked.name)``, falling back to the
+    next-highest-scored candidate on load failure.
+
+    ``build_fn`` is a callable ``name -> engine`` that may raise on any
+    backend-side load error (AWQ kernel missing, GPTQ checkpoint absent, etc).
+    Returns ``(candidate_actually_used, engine)``. Raises ``RuntimeError``
+    only when every candidate fails to load — at that point the server cannot
+    bind and must abort.
+    """
+    # Build the fallback queue: picked first, then remaining candidates by
+    # descending score (matches run_auto_quant_picker's soft-fallback policy).
+    seen = {picked.name}
+    queue: list[Candidate] = [picked]
+    by_score = sorted(all_candidates, key=lambda c: -c.score)
+    for cand in by_score:
+        if cand.name not in seen:
+            queue.append(cand)
+            seen.add(cand.name)
+
+    last_error: Exception | None = None
+    for cand in queue:
+        try:
+            engine = build_fn(cand.name)
+        except Exception as exc:  # noqa: BLE001 — caller's build is best-effort
+            last_error = exc
+            continue
+        return cand, engine
+
+    # Redact: type+message rather than repr — repr can include filesystem
+    # paths from inside the backend's load chain (matches v0.34.0 crash.py
+    # secret-redaction policy).
+    last_summary = (
+        f"{type(last_error).__name__}: {last_error}" if last_error else "<none>"
+    )
+    raise RuntimeError(
+        f"every auto-quant candidate failed to load (tried {len(queue)}); "
+        f"last error: {last_summary}"
     )
 
 
